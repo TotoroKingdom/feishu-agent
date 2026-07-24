@@ -224,6 +224,12 @@ T1 的阻断项仅针对真实能力冻结和后续 T2/T3；不得据此自行�
 | F-09 | 云文档创建、块写入、分块、目录/所有权、URL | `unverified` | 返回稳定 document_id、block_id、URL | 影响报告文档发布和部分失败恢复 | 分块失败、权限、续写和最终链接 | 飞书管理员 + 实现者；T2 | 不阻塞 Fake 发布 |
 | F-10 | 租户 token 刷新、失效、限流、错误码、超时 | `unverified` | 可注入过期、限流和超时错误 | 影响重试、鉴权和安全边界 | token 生命周期、错误映射、退避和超时 | 飞书管理员 + 实现者；T2 | 不阻塞 local-demo |
 
+#### 5.3.1 T2 Spike 执行记录（2026-07-24）
+
+本轮已执行 `python scripts/spikes/feishu_spike.py --check-config`。仓库和进程环境均未提供飞书 sandbox 配置，结果为 `status=unverified`、缺少 9 个配置变量；检查器确认 `network_calls_made=false` 且 `secret_values_emitted=false`。因此 F-01–F-10 均保持 `unverified`，本轮没有真实请求/响应、权限清单或外部写操作证据。
+
+T2 的 Fake 合约沿用本节矩阵：固定并可重复的 callback/event/actor/资源 ID，显式模拟重复投递、权限不足、超时未知、分页、schema 缺失和部分失败；Fake 结果不得作为真实飞书协议或权限结论。获得真实 sandbox 后，必须逐项补做 F-01–F-10 的 Contract Test，并把日期、权限范围、脱敏证据摘要和最终状态写回本节；在此之前不得将任何 F 项标为 `verified` 或冻结受影响 API 协议。
+
 ### 5.4 必须验证的 GitHub 能力
 
 | ID | 能力与验证条件 | 状态 | Fake 行为 | 业务影响 | 上线前 Contract Test | 负责人/下一步 | 阻塞 |
