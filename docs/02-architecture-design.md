@@ -160,6 +160,19 @@ Agent Loop 固定为 `Observe → Diagnose → Plan → Act → Verify → Conti
 
 A-20 已由本轮实施要求解决，不再作为编码阻断项。其余暂定项仍需在对应能力实现前确认，不要求在所有外部能力验证完成前一次性冻结全部设计。
 
+### 4.1 T1 前置条件与阻断结论
+
+本轮仅建立验证矩阵，不执行真实 Spike。当前仓库未提供真实飞书租户、GitHub Fine-grained PAT、LLM 凭证、测试资源或公网回调地址，因此真实平台能力统一记录为 `unverified`，不将“缺少真实环境”伪装为已验证。
+
+| 范围 | 当前条件 | T1 结论 |
+|---|---|---|
+| 飞书真实能力 | 无测试租户、应用凭证、测试群/多维表格/文档目标 | 阻塞 T2 真实 Spike；不阻塞 local-demo |
+| GitHub 真实能力 | 无 PAT、测试仓库和组织/SSO 条件 | 阻塞 T3 GitHub Spike；不阻塞 local-demo |
+| LLM 真实能力 | 未提供实际 Provider、模型、预算和出境策略 | 阻塞 T3 LLM Spike；不阻塞 local-demo |
+| 本地 Fake 主链 | 设计已定义 Fake Adapter、固定数据集和 `LLM_PROVIDER=fake` | 可供后续 local-demo 使用；T1 不实现代码 |
+
+T1 的阻断项仅针对真实能力冻结和后续 T2/T3；不得据此自行扩大 MVP、修改接口协议或开始 T5 及后续编码任务。
+
 ## 5. 技术风险、外部依赖与能力验证
 
 ### 5.1 主要技术风险
@@ -183,44 +196,58 @@ A-20 已由本轮实施要求解决，不再作为编码阻断项。其余暂定
 
 ### 5.2 外部依赖
 
-| 依赖 | 用途 | 必需配置 |
-|---|---|---|
-| 飞书企业自建应用 | 机器人、回调、卡片、多维表格、文档、群消息、用户/群信息 | App ID/Secret、Verification Token/Encrypt Key、权限、回调公网地址 |
-| 飞书真实测试租户 | 能力和权限验证 | 测试用户、测试群、测试多维表格、文档目标 |
-| GitHub | 多仓库只读研发数据 | Fine-grained PAT、至少两个测试仓库及不同异常样例 |
-| OpenAI 兼容 LLM（默认 DeepSeek） | 诊断辅助、结构化报告和渲染 | Base URL、API Key、模型与结构化输出能力 |
-| PostgreSQL | 主持久化与 Checkpoint | 版本、连接池、备份和迁移权限 |
-| Redis | 锁、缓存、队列控制和限流 | 持久性策略不是业务正确性的前提 |
-| 公网 HTTPS/Nginx | 飞书回调入口 | 合法证书、反向代理、请求大小/超时设置 |
-| CI/镜像仓库 | 自动测试与 Docker 构建 | 仓库 Secrets 和镜像权限 |
+| 依赖 | 用途 | 必需配置 | T1 状态 | 负责人/下一步 | local-demo 影响 |
+|---|---|---|---|---|---|
+| 飞书企业自建应用 | 机器人、回调、卡片、多维表格、文档、群消息、用户/群信息 | App ID/Secret、Verification Token/Encrypt Key、权限、回调公网地址 | `unverified` | 项目实现者 + 飞书管理员；补齐 T2 Spike 资源 | 不阻塞；由 Fake Adapter 替代 |
+| 飞书真实测试租户 | 能力和权限验证 | 测试用户、测试群、测试多维表格、文档目标 | `unverified` | 飞书管理员提供测试资源后执行 T2 | 不阻塞；不连接真实平台 |
+| GitHub | 多仓库只读研发数据 | Fine-grained PAT、至少两个测试仓库及不同异常样例 | `unverified` | 项目实现者 + 仓库管理员；补齐 T3 Spike 资源 | 不阻塞；由 Fake GitHub 替代 |
+| OpenAI 兼容 LLM（默认 DeepSeek） | 诊断辅助、结构化报告和渲染 | Base URL、API Key、模型与结构化输出能力 | `unverified` | 产品/安全负责人确认 Provider、模型、预算和数据策略后执行 T3 | 不阻塞；使用 Fake LLM 固定输出 |
+| PostgreSQL | 主持久化与 Checkpoint | 版本、连接池、备份和迁移权限 | `unverified` | 开发环境提供固定版本并执行迁移/Checkpoint Contract Test | 不阻塞；local-demo 使用本地固定版本，真实部署能力后续验证 |
+| Redis | 锁、缓存、队列控制和限流 | 持久性策略不是业务正确性的前提 | `unverified` | 开发环境确认版本、TTL 和故障语义；后续做运行控制 Contract Test | 不阻塞；local-demo 不以 Redis 作为业务事实来源 |
+| 公网 HTTPS/Nginx | 飞书回调入口 | 合法证书、反向代理、请求大小/超时设置 | `unverified` | 部署负责人提供公网 HTTPS 后执行回调 Spike | 不阻塞；local-demo 不接收真实回调 |
+| CI/镜像仓库 | 自动测试与 Docker 构建 | 仓库 Secrets 和镜像权限 | `not_required` | T1 不需要；进入部署阶段再配置 | 不阻塞 |
 
 ### 5.3 必须验证的飞书能力
 
-在 Phase 0 使用最小 Spike 逐项留下请求/响应脱敏样例、权限清单和结论：
+在 Phase 0 使用最小 Spike 逐项留下请求/响应脱敏样例、权限清单和结论。T1 矩阵如下；所有 `unverified` 项的 Fake 行为不得被解释为真实平台行为。
 
-1. 事件订阅 URL challenge、回调合法性校验、加密事件解密以及重放防护所需字段。
-2. 事件/卡片回调唯一 ID、时间戳、操作者 open_id/user_id 和重复投递特征。
-3. 私聊发送交互卡片、卡片表单输入、按钮回调、卡片更新/撤回或按钮禁用。
-4. 机器人能否主动私聊配置的接收人，以及用户标识类型限制。
-5. 按群 ID 发送富文本/卡片、获取 message_id、查询或判断消息实际发送结果。
-6. 机器人是否已在目标群、目标群可用性和发送权限的无副作用探测方式。
-7. 多维表格 app/table 标识格式、列 schema、字段类型、分页、过滤、批量读写、按 Run ID 查询/upsert。
-8. 公式、人员、关联记录、日期和多选字段的返回/写入格式。
-9. 创建云文档、写入块、长内容分块、目录/所有权、权限和最终 URL。
-10. 租户访问 token 的刷新、失效、限流 headers、错误码和 SDK 超时行为。
+| ID | 能力与验证条件 | 状态 | Fake 行为 | 业务影响 | 上线前 Contract Test | 负责人/下一步 | 阻塞 |
+|---|---|---|---|---|---|---|---|
+| F-01 | challenge、签名、解密、重放字段 | `unverified` | 固定合法/非法回调样例 | 无法冻结回调入口协议 | challenge、验签、解密、重放测试 | 飞书管理员 + 实现者；T2 | 仅真实回调 |
+| F-02 | 事件/卡片唯一 ID、时间戳、操作者和重复投递 | `unverified` | 固定 event_id、actor 和重复事件 | 影响 inbox 去重与授权 | 重复事件、旧时间戳、非法操作者 | 实现者；T2 | 仅真实回调 |
+| F-03 | 私聊卡片、表单、按钮回调、更新/撤回/禁用 | `unverified` | 稳定 card/message/callback ID，支持重复点击 | 影响 HITL 交互体验和幂等 | 卡片发送、回调、按钮状态和重复点击 | 飞书管理员 + 实现者；T2 | 不阻塞 Fake HITL |
+| F-04 | 机器人主动私聊接收人及用户标识类型 | `unverified` | 允许配置的 Fake 用户 ID | 影响范围确认和发布确认送达 | open_id/user_id 映射与无权限错误 | 飞书管理员；T2 | 不阻塞 local-demo |
+| F-05 | 群消息发送、message_id、结果查询/判断 | `unverified` | 返回稳定 message_id 和可查询结果 | 影响发布消息及 unknown 处理 | 发送成功、超时未知、查询核验 | 飞书管理员 + 实现者；T2 | 不阻塞 Fake 发布 |
+| F-06 | 目标群成员资格和无副作用可用性探测 | `unverified` | 配置状态直接返回可用/不可用 | 影响发布前连通性检查 | 未入群、无权限、群不可用 | 飞书管理员；T2 | 不阻塞 local-demo |
+| F-07 | 多维表格标识、schema、类型、分页、过滤和 Run ID upsert | `unverified` | 固定 schema、分页和幂等 upsert | 影响项目数据读取与归档 | schema、分页、过滤、重复 upsert | 飞书管理员 + 实现者；T2 | 不阻塞 Fake 采集 |
+| F-08 | 公式、人员、关联、日期、多选字段格式 | `unverified` | 使用内部统一实体格式 | 影响字段映射和数据质量 | 各字段读写/缺失/类型错误 | 飞书管理员 + 实现者；T2 | 不阻塞 Fake 采集 |
+| F-09 | 云文档创建、块写入、分块、目录/所有权、URL | `unverified` | 返回稳定 document_id、block_id、URL | 影响报告文档发布和部分失败恢复 | 分块失败、权限、续写和最终链接 | 飞书管理员 + 实现者；T2 | 不阻塞 Fake 发布 |
+| F-10 | 租户 token 刷新、失效、限流、错误码、超时 | `unverified` | 可注入过期、限流和超时错误 | 影响重试、鉴权和安全边界 | token 生命周期、错误映射、退避和超时 | 飞书管理员 + 实现者；T2 | 不阻塞 local-demo |
 
 ### 5.4 必须验证的 GitHub 能力
 
-1. Fine-grained PAT 最小只读权限能否覆盖 metadata、issues、pull requests、contents/commits、reviews、milestones 和 contributors。
-2. 私有仓库与组织限制、SSO/审批状态、token 过期和权限不足的错误差异。
-3. Issue 列表中的 PR 混入规则，关闭/创建时间过滤和分页一致性。
-4. PR review 状态如何确定性聚合，以及 requested reviewers 与 submitted reviews 的差异。
-5. Commit 查询按 `since/until`、默认分支与多分支的语义；MVP 应明确统计默认分支还是所有可见分支。
-6. Contributors 统计延迟、202 响应及匿名贡献者行为。
-7. Milestone 的 open/closed item 口径和完成率数据。
-8. Rate limit、secondary rate limit、Retry-After、ETag/Last-Modified 和条件请求。
-9. 超大分页、删除/重命名仓库、空仓库和归档仓库行为。
-10. API 超时但响应未知时的安全重试边界（只读请求可重试）。
+| ID | 能力与验证条件 | 状态 | Fake 行为 | 业务影响 | 上线前 Contract Test | 负责人/下一步 | 阻塞 |
+|---|---|---|---|---|---|---|---|
+| G-01 | PAT 最小只读权限覆盖 metadata、issues、PR、commits、reviews、milestones、contributors | `unverified` | 按能力返回固定权限结果 | 影响采集完整性和配置提示 | 每能力权限探测与错误映射 | 仓库管理员 + 实现者；T3 | 仅真实采集 |
+| G-02 | 私有仓库、组织限制、SSO、过期和权限不足错误 | `unverified` | 固定 401/403/404 分类 | 影响安全提示和降级策略 | 私有/组织/过期 PAT 矩阵 | 仓库管理员；T3 | 不阻塞 Fake |
+| G-03 | Issue 中 PR 混入、时间过滤和分页 | `unverified` | 明确标记 PR 并按本地时间过滤 | 影响 Issue 指标准确性 | PR 排除、边界时间、分页一致性 | 实现者；T3 | 不阻塞 Fake |
+| G-04 | PR review 状态及 requested/submitted 差异 | `unverified` | 固定 review 聚合结果 | 影响审查状态指标 | review 状态黄金样例 | 实现者；T3 | 不阻塞 Fake |
+| G-05 | Commit since/until、默认分支与多分支语义 | `unverified` | 固定默认分支活动样例 | 影响提交统计口径 | 周期边界和分支口径测试 | 产品负责人 + 实现者；T3 | 不阻塞 Fake |
+| G-06 | Contributors 延迟、202 和匿名贡献者 | `unverified` | 固定成功/202/匿名样例 | 影响人员统计完整性 | 202 重试提示与匿名映射 | 实现者；T3 | 不阻塞 Fake |
+| G-07 | Milestone open/closed item 与完成率 | `unverified` | 固定 milestone 汇总 | 影响里程碑进度 | open/closed 和空 milestone 测试 | 产品负责人 + 实现者；T3 | 不阻塞 Fake |
+| G-08 | rate limit、secondary limit、Retry-After、ETag/Last-Modified | `unverified` | 注入限流、退避和缓存响应 | 影响采集时延与重试安全 | headers、退避、条件请求 | 实现者；T3 | 不阻塞 Fake |
+| G-09 | 大分页、删除/重命名、空/归档仓库 | `unverified` | 固定空、归档和仓库异常场景 | 影响多仓数据质量 | 分页上限和异常仓隔离 | 仓库管理员 + 实现者；T3 | 不阻塞 Fake |
+| G-10 | 超时且响应未知时的只读安全重试 | `unverified` | 只读超时可重复返回同一快照 | 影响恢复与重复采集 | 超时、重试上限、快照复用 | 实现者；T3 | 不阻塞 Fake |
+
+### 5.5 必须验证的 LLM 与本地替代能力
+
+| ID | 能力与验证条件 | 状态 | Fake 行为 | 业务影响 | 上线前 Contract Test | 负责人/下一步 | 阻塞 |
+|---|---|---|---|---|---|---|---|
+| L-01 | OpenAI 兼容鉴权、模型可用性、超时和错误映射 | `unverified` | 固定成功、超时和错误响应 | 影响报告/诊断调用可用性 | 鉴权、模型不存在、超时、429 | Provider 负责人 + 实现者；T3 | 不阻塞 local-demo |
+| L-02 | 结构化 JSON/schema 输出及非法输出处理 | `unverified` | 返回固定合法结构和非法样例 | 影响报告落库与 Grounding | schema 合法/非法、有限修复 | Provider 负责人 + 实现者；T3 | 不阻塞 Fake |
+| L-03 | usage、限流、成本和数据保留/出境条件 | `unverified` | 返回固定 usage 摘要，不发送真实数据 | 影响预算、审计和安全合规 | usage、429、敏感信息扫描 | 产品/安全负责人；T3 | 不阻塞 Fake |
+
+T1 矩阵结论：F-01–F-10、G-01–G-10、L-01–L-03 均未取得真实证据，必须在 T2/T3 补做；它们均不阻塞 local-demo。基础依赖的运行版本与故障语义属于后续实现/部署验证，不在 T1 执行真实安装或外部写操作。
 
 ## 6. 整体系统架构
 
@@ -672,7 +699,7 @@ Docker Compose 服务：
 
 ## 15. 外部能力验证记录规则
 
-能力 Spike 的结果直接更新本文第 4、5 节，不新建替代设计文档。每项能力使用以下状态：
+能力 Spike 的结果直接更新本文第 4、5 节，不新建替代设计文档。T1 的验证矩阵也只保存在本文，不新建能力报告或决策文档。每项能力使用以下状态：
 
 - `verified`：已在真实测试环境验证，并记录日期、权限和脱敏证据摘要；
 - `unverified`：当前无真实环境或权限，记录原因；
@@ -680,3 +707,5 @@ Docker Compose 服务：
 - `not_required`：不属于当前 MVP。
 
 对 `unverified` 项必须同时写明 Fake 行为、对业务的影响和上线前必须补做的真实 Contract Test。顺序为“初审 → Spike → 更新现有文档与决策 → 冻结受影响协议/口径 → 开始对应编码”，不要求先冻结再验证。
+
+T1 记录规则补充：每项能力还必须写明负责人或前置条件、下一步和是否阻塞 local-demo；`unverified` 只表示真实能力尚未证明，不得作为 local-demo 的隐式依赖。只有真实 Spike 取得脱敏请求/响应、权限清单和可复现 Contract Test 结果后，才能改为 `verified`；若真实能力不足，必须改为 `degraded` 并记录可接受的降级路径；与当前 MVP 无关的能力才可标为 `not_required`。
