@@ -11,6 +11,7 @@
 |---|---|---|---|
 | 飞书开放平台入口 | `/api/v1/feishu` | 飞书平台 | 回调来源验证、解密、防重放 |
 | 管理后台 | `/api/v1/admin` | Next.js 管理后台 | 管理员 Session/JWT |
+| 本地演示 | `/api/v1/local-demo` | 开发者/自动化测试 | 仅 `APP_PROFILE=local-demo`，生产必须 404/拒绝启动 |
 | 内部 Worker | `/internal/v1` | 受信 API/Worker/Scheduler | 内网 + service token/mTLS；单进程部署可直接调用应用服务 |
 | 运维 | `/health`, `/ready`, `/metrics` | 编排/监控 | health 可公开最小信息；metrics 限内网 |
 
@@ -440,9 +441,27 @@ PUT 的秘密字段为 write-only，不回显；禁止通用 `PATCH` 读取或�
 
 它不允许绕过 HITL 或把已取消 run 改回活动状态。
 
-#### `POST /api/v1/admin/runs/trigger`（待 A-20 确认）
+#### `POST /api/v1/admin/runs/trigger`
 
-管理员演示/补跑入口，使用项目默认周期或显式周期；创建后仍停在 HITL 1。若不确认此能力则不实现。
+管理员演示/补跑入口，调用 `RunCreationService`，使用项目默认周期或显式周期；创建后仍停在 HITL 1。它是最小纵向闭环入口，Scheduler 只在产品化阶段复用同一服务。
+
+### 6.7 `local-demo` 模拟入口
+
+仅在 `APP_PROFILE=local-demo` 注册：
+
+- `POST /api/v1/local-demo/runs`：选择固定 scenario 并手动创建运行；
+- `POST /api/v1/local-demo/runs/{run_id}/actions`：模拟经过同一 Approval Service 校验的 HITL 动作；
+- `GET /api/v1/local-demo/scenarios`：列出固定演示数据集。
+
+合法 scenario 至少包括 `happy_path`, `github_repository_failure`, `feishu_critical_field_missing`, `side_effect_partial_failure`。
+
+模拟入口不能：
+
+- 直接修改 Graph State；
+- 绕过 approval revision/hash；
+- 绕过 `SideEffectExecutor`；
+- 在非 local-demo 配置下注册；
+- 接受任意文件路径、URL、Tool 名或外部 payload。
 
 ### 6.5 Job 状态
 
@@ -602,4 +621,5 @@ RecoveryService.recover_stale_runs(...)
 - [ ] 所有外部写入无法通过后台通用接口绕过发布审批。
 - [ ] 管理后台的运行详情能关联节点、Tool、诊断、审批、证据和产物。
 - [ ] 内部命令版本化、可去重，且不暴露公网。
-
+- [ ] 手动运行入口与 Scheduler 使用同一 `RunCreationService`，Graph 不依赖 Scheduler。
+- [ ] local-demo 可模拟完整审批与副作用结果，生产环境不存在模拟入口。

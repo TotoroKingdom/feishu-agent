@@ -23,6 +23,8 @@ LangGraph 不负责：
 - 直接把任意 LLM Tool Call 当作外部写入；
 - 用 Checkpoint 代替运行数据库、审计表或副作用 ledger。
 
+Graph 的启动输入只依赖已持久化的 `report_run`。该运行可以由 local-demo、管理员手动入口或 Scheduler 创建；Graph 不感知也不依赖具体触发来源。
+
 ## 2. Graph 标识与版本
 
 - `thread_id`：每个 `report_run` 唯一且稳定，建议 `report-run:{run_id}`。
@@ -182,6 +184,8 @@ flowchart LR
 ```
 
 PRD 建议节点中的 `diagnose_problem` 和 `repair_or_retry` 保留；为体现 Observe/Plan/Verify，本设计增加三个小节点，不改变职责。
+
+正常报告路径始终是 `validate_data → calculate_metrics → build_evidence → generate_structured_report`，不依赖诊断节点。实施时先交付校验通过的纵向路径，再逐步启用异常边和完整诊断循环；这只是交付顺序变化，不改变最终状态图。
 
 路由由 `ProblemPolicyRegistry` 决定：
 
@@ -583,7 +587,7 @@ Callback inbox、approval 原子消费和 run lease 三层保护。重复 resume
 
 ### 14.2 Graph 集成
 
-使用 InMemory/Fake Tool + PostgreSQL Checkpointer：
+优先使用固定演示数据集、Fake Adapter + PostgreSQL Checkpointer，使真实飞书环境不可用时仍能开发完整主链。Fake 与真实 Adapter 使用同一契约。覆盖：
 
 1. 正常两阶段流程；
 2. scope 修改后旧审批失效；
@@ -618,4 +622,3 @@ Callback inbox、approval 原子消费和 run lease 三层保护。重复 resume
 - [ ] 每项副作用均可在 Checkpoint 滞后时安全重放。
 - [ ] 报告重新生成不会无条件重复采集全部数据。
 - [ ] 计划变化会强制新审批。
-

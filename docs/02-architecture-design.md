@@ -153,10 +153,12 @@ Agent Loop 固定为 `Observe → Diagnose → Plan → Act → Verify → Conti
 | A-14 | 群消息超时后能否按业务键查询既有消息 | exactly-once 可实现性 | 优先使用平台返回 ID 和业务标记；若平台无查询能力，超时进入 `unknown` 并人工处理，不盲重发 |
 | A-15 | 多维表格归档是新增还是按 Run ID upsert | 幂等 | 按 Run ID 唯一查找并 upsert |
 | A-16 | 管理后台修改项目配置是否也必须走第二阶段“发布审批” | 配置可用性 | 配置修改采用独立的“预览—管理员确认—审计”流程，不复用周报 HITL 2；PRD 文字需确认 |
-| A-17 | Scheduler/Worker 的具体组件未指定 | 部署和恢复 | MVP 建议 APScheduler + PostgreSQL job metadata + Redis 锁，避免引入独立队列产品；执行接口保持可替换 |
+| A-17 | Scheduler/Worker 的具体组件未指定 | 部署和恢复 | Graph 只依赖 `RunCreationService`，先提供手动创建运行；Scheduler 后置。产品化阶段建议 APScheduler + PostgreSQL job metadata + Redis 锁 |
 | A-18 | 原始数据保存 PostgreSQL 还是对象存储 | 成本和实现复杂度 | MVP 存 PostgreSQL 压缩 JSONB/分批快照并设保留期；超过阈值再引入对象存储，不在本期实现 |
 | A-19 | Actions 摘要被标为可选，是否纳入验收 | 工作量 | 不纳入 MVP 必须项，Port 预留但不实现 |
-| A-20 | 管理员“手动触发周报”未列为后台 API，但演示脚本允许手动触发 | 演示能力 | 建议提供仅管理员的手动触发，仍必须进入 HITL 1；需产品确认 |
+| A-20 | 管理员“手动触发周报”未列为后台 API，但演示脚本允许手动触发 | 演示能力 | 已按实施优化要求纳入 MVP：提供仅管理员的手动触发，仍必须进入 HITL 1；Scheduler 不作为 Graph 前置 |
+
+A-20 已由本轮实施要求解决，不再作为编码阻断项。其余暂定项仍需在对应能力实现前确认，不要求在所有外部能力验证完成前一次性冻结全部设计。
 
 ## 5. 技术风险、外部依赖与能力验证
 
@@ -267,6 +269,29 @@ flowchart TB
 - 外部系统无法参与事务，采用事务性意图记录、幂等键、结果核验和补偿状态机。
 - 对 callback/job 使用 inbox 去重；对异步派发建议使用数据库 outbox，Redis 队列只承载传输。
 - 同一项目周期使用 PostgreSQL 唯一约束作为最终并发防线，Redis 锁只做快速互斥。
+
+### 6.4 `local-demo` 运行剖面
+
+为使核心 Agent 主链不被真实企业环境、Scheduler、完整配置后台或完整诊断系统阻塞，开发阶段提供与真实 Port 使用相同协议的 `local-demo` 剖面：
+
+```env
+APP_PROFILE=local-demo
+FEISHU_PROVIDER=fake
+GITHUB_PROVIDER=fake
+LLM_PROVIDER=fake
+```
+
+`local-demo` 必须满足：
+
+- 使用固定、无敏感信息的演示数据集；
+- 可模拟 HITL 1、人工补充和 HITL 2 回调；
+- 可选择正常、单仓失败、关键飞书字段缺失和副作用部分失败场景；
+- 可模拟文档、群消息和归档的稳定外部 ID 与查询结果；
+- 通过 `RunCreationService` 手动创建运行，不依赖 Scheduler；
+- Fake 与真实适配器运行同一套 Port 契约测试；
+- 生产配置启动时必须拒绝 Fake provider 和 local-demo 专用入口。
+
+Fake 只替代外部平台，不绕过 Graph、Checkpoint、审批、计划哈希或副作用执行器。
 
 ## 7. 模块边界
 
@@ -466,11 +491,13 @@ feishu-agent/
 
 ### 9.1 运行创建
 
-1. Scheduler 根据项目时区计算 `[start_at, end_at)`。
+1. `RunCreationService` 接收手动入口或 Scheduler 的创建命令，并根据项目时区校验/计算 `[start_at, end_at)`。
 2. 使用 `(project_id, period_start, period_end, run_kind)` 唯一约束创建运行。
 3. 保存配置快照版本，不让后续配置变化悄悄改变已创建运行。
 4. outbox 派发 `START_REPORT_RUN`。
 5. Worker 获取 run 级租约并调用 Graph。
+
+最小纵向闭环先使用手动入口；Scheduler 只是后续的命令生产者，不属于 Graph 依赖。
 
 ### 9.2 配置版本化
 
@@ -643,3 +670,13 @@ Docker Compose 服务：
 - [ ] 服务重启与重复回调不重复产生副作用。
 - [ ] 飞书/GitHub 未确认能力已列入 Phase 0，而非静默假设。
 
+## 15. 外部能力验证记录规则
+
+能力 Spike 的结果直接更新本文第 4、5 节，不新建替代设计文档。每项能力使用以下状态：
+
+- `verified`：已在真实测试环境验证，并记录日期、权限和脱敏证据摘要；
+- `unverified`：当前无真实环境或权限，记录原因；
+- `degraded`：真实能力不足，记录明确降级路径；
+- `not_required`：不属于当前 MVP。
+
+对 `unverified` 项必须同时写明 Fake 行为、对业务的影响和上线前必须补做的真实 Contract Test。顺序为“初审 → Spike → 更新现有文档与决策 → 冻结受影响协议/口径 → 开始对应编码”，不要求先冻结再验证。

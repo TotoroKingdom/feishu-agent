@@ -728,3 +728,19 @@ Redis key 必须包含环境前缀，所有 key 有 TTL：
 - [ ] 大数据使用批次引用，Checkpoint 不保存原始全集。
 - [ ] 所有状态均有终态定义和合法迁移。
 - [ ] 生命周期不会删除等待态或未解决副作用。
+
+## 16. 渐进式迁移顺序
+
+本文描述的是最终 MVP 数据模型，不代表编码开始前一次性创建所有表。表必须随第一个真实业务调用方逐步加入，每个数据库 Task 最多包含一个主要 migration，并执行 `up → down → up` 测试。
+
+| 迁移组 | 首个业务调用方 | 本组表 |
+|---|---|---|
+| DB-0 本地底座 | local-demo 配置与手动创建运行 | `projects`, `project_repositories`, `feishu_resources` 的最小字段 |
+| DB-1 最小 Graph | HITL 1、Checkpoint、最小运行详情 | `report_runs`, `run_status_history`, `human_approvals`, Checkpointer 表、最小 `tool_executions` |
+| DB-2 最小采集报告 | 单表/单仓采集、Tool 摘要、指标和结构化报告 | `source_data_batches`, `normalized_snapshots`, `normalized_entities`, `validation_results`, 最小 `tool_executions`, `metric_snapshots`, `report_versions`, `evidence_sets/items`, `report_claims/evidence` |
+| DB-3 最小发布 | HITL 2 和三项 Fake/真实副作用 | `publish_plans`, `side_effect_operations`, `side_effect_attempts`, `report_artifacts` |
+| DB-4 可靠性与真实平台 | callback、outbox、真实凭证、重启和协调消息 | `callback_events`, `outbox_messages`, `encrypted_credentials`, `feishu_message_deliveries`, `workflow_checkpoint_refs` |
+| DB-5 Agent Loop/观测 | 诊断、节点、LLM 细节和完整审计 | `diagnosis_records`, `llm_executions`, `node_executions`, `audit_logs`，并扩展 `tool_executions` |
+| DB-6 产品化 | 配置 UI、异步连通性、Scheduler、认证、首次向导 | `feishu_field_mappings`, `async_jobs`, `schedule_configs`, `prompt_versions`, `admin_users`, `admin_sessions`, `onboarding_sessions` |
+
+不得为了“模型完整”提前创建近期没有调用方的复杂表。后续迁移可以扩展早期最小表，但必须保持已有 local-demo 数据和 Checkpoint 的升级测试。
