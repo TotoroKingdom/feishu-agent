@@ -245,6 +245,12 @@ T2 的 Fake 合约沿用本节矩阵：固定并可重复的 callback/event/acto
 | G-09 | 大分页、删除/重命名、空/归档仓库 | `unverified` | 固定空、归档和仓库异常场景 | 影响多仓数据质量 | 分页上限和异常仓隔离 | 仓库管理员 + 实现者；T3 | 不阻塞 Fake |
 | G-10 | 超时且响应未知时的只读安全重试 | `unverified` | 只读超时可重复返回同一快照 | 影响恢复与重复采集 | 超时、重试上限、快照复用 | 实现者；T3 | 不阻塞 Fake |
 
+#### 5.4.1 T3 GitHub Spike 执行记录（2026-07-24）
+
+本轮已执行 `python scripts/spikes/github_spike.py --check-config`。结果为 `status=unverified`，缺少 `GITHUB_PAT`、`GITHUB_TEST_REPO_1` 和 `GITHUB_TEST_REPO_2`；检查器确认未发起网络请求、未输出 token，且 `actions_included=false`。因此 G-01–G-10 的真实最小权限、组织/SSO 行为、分页语义、限流 headers 和错误分类尚无真实证据，均保持 `unverified`。
+
+在真实 sandbox 提供后，必须用两个测试仓库逐项执行 metadata、issues/排除 PR、pull requests、commits、reviews、milestones、contributors、权限不足、限流和只读超时 Contract Test；结果须记录脱敏响应摘要、权限范围和错误分类后，才能冻结 GitHub Port。Fake 仍只提供稳定 fixture、显式 401/403/404/202/rate-limit/timeout 场景和可重复分页，不代表 GitHub 真实语义。
+
 ### 5.5 必须验证的 LLM 与本地替代能力
 
 | ID | 能力与验证条件 | 状态 | Fake 行为 | 业务影响 | 上线前 Contract Test | 负责人/下一步 | 阻塞 |
@@ -253,7 +259,13 @@ T2 的 Fake 合约沿用本节矩阵：固定并可重复的 callback/event/acto
 | L-02 | 结构化 JSON/schema 输出及非法输出处理 | `unverified` | 返回固定合法结构和非法样例 | 影响报告落库与 Grounding | schema 合法/非法、有限修复 | Provider 负责人 + 实现者；T3 | 不阻塞 Fake |
 | L-03 | usage、限流、成本和数据保留/出境条件 | `unverified` | 返回固定 usage 摘要，不发送真实数据 | 影响预算、审计和安全合规 | usage、429、敏感信息扫描 | 产品/安全负责人；T3 | 不阻塞 Fake |
 
-T1 矩阵结论：F-01–F-10、G-01–G-10、L-01–L-03 均未取得真实证据，必须在 T2/T3 补做；它们均不阻塞 local-demo。基础依赖的运行版本与故障语义属于后续实现/部署验证，不在 T1 执行真实安装或外部写操作。
+#### 5.5.1 T3 LLM Spike 执行记录（2026-07-24）
+
+本轮已执行 `python scripts/spikes/llm_spike.py --check-config`。结果为 `status=unverified`，缺少 `LLM_BASE_URL`、`LLM_API_KEY` 和 `LLM_MODEL`；检查器确认未发起网络请求、未输出 API Key，且 `streaming_included=false`。因此 L-01–L-03 的真实鉴权、结构化输出、usage、429/timeout、成本和模型差异尚无真实证据，均保持 `unverified`。
+
+在真实 Provider 配置和安全策略确认后，必须执行合法/非法 schema、usage、429、timeout、模型不存在、敏感信息扫描和受控 JSON fallback Contract Test；结果须记录模型、请求能力和脱敏响应摘要后，才能冻结 Provider 协议。Fake 只提供固定合法/非法结构、usage 摘要、429/timeout 和模型错误，不实现 Streaming，也不代表真实 Provider 行为。
+
+T1 矩阵结论更新：F-01–F-10、G-01–G-10、L-01–L-03 均已尝试配置检查，但仍未取得真实证据；真实 Spike 仍是后续冻结协议的前置条件，且不阻塞 local-demo。基础依赖的运行版本与故障语义属于后续实现/部署验证。
 
 ## 6. 整体系统架构
 
