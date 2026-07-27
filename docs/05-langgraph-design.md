@@ -2,7 +2,7 @@
 
 > 文档编号：DESIGN-005  
 > 对应需求：`01-feishu-project-weekly-agent-prd.md` v1.0  
-> 状态：待评审  
+> 状态：T4 条件冻结（真实外部 Contract Test 待补）
 > 核心原则：Graph 编排业务状态；确定性代码掌控权限、路由、指标、幂等和副作用
 
 ## 1. Graph 职责与非职责
@@ -622,3 +622,7 @@ Callback inbox、approval 原子消费和 run lease 三层保护。重复 resume
 - [ ] 每项副作用均可在 Checkpoint 滞后时安全重放。
 - [ ] 报告重新生成不会无条件重复采集全部数据。
 - [ ] 计划变化会强制新审批。
+
+## 16. T4 条件冻结说明
+
+T4 冻结 Graph 的供应商无关边界：Graph 只调用 Port/Tool，Fake 与真实 Adapter 使用同一契约；State 只保存引用、摘要、状态和错误分类，不保存 Secret、SDK client 或完整外部 payload。真实 Provider 的 schema、usage、限流和错误差异尚未通过网络 Contract Test，因此不能进入 State 合约、条件边或节点协议；这些差异必须在 Adapter 层归一化后再被 Graph 使用。

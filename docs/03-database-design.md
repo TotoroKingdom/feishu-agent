@@ -2,7 +2,7 @@
 
 > 文档编号：DESIGN-003  
 > 对应需求：`01-feishu-project-weekly-agent-prd.md` v1.0  
-> 状态：待评审  
+> 状态：T4 条件冻结（真实外部 Contract Test 待补）
 > 数据库：PostgreSQL；Redis 仅用于缓存、锁、限流和任务运行控制
 
 ## 1. 设计目标
@@ -744,3 +744,7 @@ Redis key 必须包含环境前缀，所有 key 有 TTL：
 | DB-6 产品化 | 配置 UI、异步连通性、Scheduler、认证、首次向导 | `feishu_field_mappings`, `async_jobs`, `schedule_configs`, `prompt_versions`, `admin_users`, `admin_sessions`, `onboarding_sessions` |
 
 不得为了“模型完整”提前创建近期没有调用方的复杂表。后续迁移可以扩展早期最小表，但必须保持已有 local-demo 数据和 Checkpoint 的升级测试。
+
+## 17. T4 条件冻结说明
+
+T4 仅冻结数据库边界，不新增迁移：PostgreSQL 继续作为事实源，Redis 继续只承担可丢失的运行控制；凭证仅以加密引用进入业务数据，外部原始 payload 不进入 LangGraph State。由于真实外部 Contract Test 尚未执行，本轮不冻结任何供应商原始字段类型、错误响应或外部 ID 具体格式；相关字段继续使用设计中稳定 ID、URL、摘要和 content hash 的抽象。

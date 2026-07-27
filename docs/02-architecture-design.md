@@ -2,7 +2,7 @@
 
 > 文档编号：DESIGN-002  
 > 对应需求：`01-feishu-project-weekly-agent-prd.md` v1.0  
-> 状态：待评审  
+> 状态：T4 条件冻结（真实外部 Contract Test 待补）
 > 设计范围：单企业、单项目、最多 5 个 GitHub 仓库的 MVP
 
 ## 1. 设计结论
@@ -727,3 +727,16 @@ Docker Compose 服务：
 对 `unverified` 项必须同时写明 Fake 行为、对业务的影响和上线前必须补做的真实 Contract Test。顺序为“初审 → Spike → 更新现有文档与决策 → 冻结受影响协议/口径 → 开始对应编码”，不要求先冻结再验证。
 
 T1 记录规则补充：每项能力还必须写明负责人或前置条件、下一步和是否阻塞 local-demo；`unverified` 只表示真实能力尚未证明，不得作为 local-demo 的隐式依赖。只有真实 Spike 取得脱敏请求/响应、权限清单和可复现 Contract Test 结果后，才能改为 `verified`；若真实能力不足，必须改为 `degraded` 并记录可接受的降级路径；与当前 MVP 无关的能力才可标为 `not_required`。
+
+## 5.6 T4 条件冻结基线
+
+2026-07-27 已通过 `.env` 完整性审计，`FEISHU_PROVIDER`、`GITHUB_PROVIDER` 和 `LLM_PROVIDER` 均为 `real`，三个 Spike checker 均返回 `status=ready`。但 checker 仅验证配置完整性，明确返回 `network_calls_made=false`；因此 F-01–F-10、G-01–G-10、L-01–L-03 仍保持 `unverified`，不能据此冻结真实外部协议、权限或错误细节。
+
+本轮形成的可编码条件基线为：
+
+1. 外部平台只能通过既有 Port/Adapter 边界接入，Graph、领域服务和 API 不直接依赖 SDK；
+2. `local-demo` 继续使用 Fake Provider，Fake 只能模拟矩阵中明确的稳定 ID、分页、权限错误、限流、超时和结构化输出场景；
+3. API 对外继续使用 `EXTERNAL_CAPABILITY_MISSING`、`EXTERNAL_PROVIDER_ERROR` 和 `DEPENDENCY_UNAVAILABLE` 分类，外部原始 payload、密钥和 SDK 对象不得进入响应或 State；
+4. 未取得真实 Contract Test 前，不冻结飞书回调字段、GitHub 权限/分页语义或 LLM 原生 schema/usage 语义，也不得开始依赖这些未验证细节的后续编码。
+
+T4 正式验收仍为阻塞：配置已就绪，但阻塞性未知项尚未清零。需要分别运行真实飞书、GitHub 和 LLM Contract Test，记录脱敏响应、权限范围、错误分类和模型能力后，才能将本节状态从“条件冻结”改为正式冻结。

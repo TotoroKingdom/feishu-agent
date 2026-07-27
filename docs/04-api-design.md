@@ -2,7 +2,7 @@
 
 > 文档编号：DESIGN-004  
 > 对应需求：`01-feishu-project-weekly-agent-prd.md` v1.0  
-> 状态：待评审  
+> 状态：T4 条件冻结（真实外部 Contract Test 待补）
 > 约束：API 层只做协议适配、鉴权、校验和用例调用，不承载 Agent 业务逻辑
 
 ## 1. API 分区
@@ -623,3 +623,14 @@ RecoveryService.recover_stale_runs(...)
 - [ ] 内部命令版本化、可去重，且不暴露公网。
 - [ ] 手动运行入口与 Scheduler 使用同一 `RunCreationService`，Graph 不依赖 Scheduler。
 - [ ] local-demo 可模拟完整审批与副作用结果，生产环境不存在模拟入口。
+
+## 12. T4 条件冻结说明
+
+T4 冻结 API 的边界与错误分类，不冻结尚未取得真实证据的供应商 payload：
+
+- 飞书回调仍必须先完成来源验证、解密/签名校验、时间窗和 inbox 去重；具体响应字段继续以真实 Contract Test 结果为准。
+- GitHub、飞书和 LLM 连通性必须按能力返回独立结果，不得用单一布尔值掩盖部分成功。
+- `EXTERNAL_CAPABILITY_MISSING`、`EXTERNAL_PROVIDER_ERROR` 和 `DEPENDENCY_UNAVAILABLE` 作为跨 Provider 的稳定错误分类；供应商错误码只能保存在脱敏诊断摘要中。
+- 凭证接口继续 write-only，API、OpenAPI、日志和错误响应不得返回 Secret、PAT、API Key 或原始外部 payload。
+
+真实外部字段、权限和错误语义仍处于条件冻结状态；未完成 Contract Test 前，不得把本节解释为真实平台协议已经验证。
