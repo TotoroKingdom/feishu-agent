@@ -10,9 +10,10 @@ from langgraph.types import Command, StateSnapshot
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.approvals import GenerationApprovalStore
 from app.agent.graph import build_workflow_graph
 from app.agent.state import build_initial_state, thread_id_for_run
-from app.db.models import ReportRun, RunStatusHistory
+from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
 
 SessionFactory = Callable[[], Session]
 
@@ -33,33 +34,37 @@ class WorkflowRuntime:
         checkpointer: Any | None = None,
     ) -> None:
         self._session_factory = session_factory
+        self._approval_store = GenerationApprovalStore(session_factory)
         self._checkpointer: Any = checkpointer or MemorySaver()
-        self._graph = build_workflow_graph(self._checkpointer)
+        self._graph = build_workflow_graph(self._checkpointer, self._approval_store)
 
     def start(self, run_id: str) -> WorkflowExecutionResult:
         with self._session_factory() as session:
             run = self._load_run(session, run_id)
+            project = self._load_project(session, run.project_id)
             thread_id = self._ensure_run_identity(run)
             config = self._config(thread_id)
             existing = self._existing_checkpoint(config)
             if existing is not None:
                 snapshot = cast(StateSnapshot, self._graph.get_state(config))
                 return self._result_from_snapshot(run_id, thread_id, snapshot)
+            initial_state = self._initial_state(run, project)
             session.flush()
-            self._graph.invoke(build_initial_state(run_id), config=config)
+            self._graph.invoke(initial_state, config=config)
             snapshot = cast(StateSnapshot, self._graph.get_state(config))
             self._record_transition(
                 session,
                 run,
                 from_status=run.status,
                 to_status=self._status_from_snapshot(snapshot),
-                reason_code="workflow_started",
-                node_name="bootstrap_run",
+                reason_code=self._reason_code_from_snapshot(snapshot, started=True),
+                node_name=self._current_node_from_snapshot(snapshot),
                 checkpoint_ref=self._checkpoint_id(snapshot),
             )
             run.status = self._status_from_snapshot(snapshot)
             run.current_stage = self._current_stage_from_snapshot(snapshot) or run.current_stage
             run.current_node = self._current_node_from_snapshot(snapshot)
+            run.scope_revision = self._scope_revision_from_snapshot(snapshot) or run.scope_revision
             session.commit()
             return self._result_from_snapshot(run_id, thread_id, snapshot)
 
@@ -70,18 +75,35 @@ class WorkflowRuntime:
             config = self._config(thread_id)
             if self._existing_checkpoint(config) is None:
                 raise ValueError("run has no checkpoint to resume")
-            self._graph.invoke(Command(resume=dict(resume_payload)), config=config)
+            snapshot = cast(StateSnapshot, self._graph.get_state(config))
+            if run.status != "waiting":
+                return self._result_from_snapshot(run_id, thread_id, snapshot)
+            pending = self._load_pending_generation_approval(session, run_id)
+            normalized_resume_payload = dict(resume_payload)
+            if pending is not None:
+                if "challenge_id" not in normalized_resume_payload and "approval_ref" not in normalized_resume_payload:
+                    normalized_resume_payload["challenge_id"] = pending.challenge_id
+                    normalized_resume_payload["approval_ref"] = pending.challenge_id
+                if "approval_revision" not in normalized_resume_payload:
+                    normalized_resume_payload["approval_revision"] = pending.revision
+                scope_hash = snapshot.values.get("scope", {}).get("scope_hash") if isinstance(snapshot.values.get("scope"), Mapping) else None
+                if "presented_hash" not in normalized_resume_payload and isinstance(scope_hash, str):
+                    normalized_resume_payload["presented_hash"] = scope_hash
+                if self._resume_challenge_id(normalized_resume_payload) != pending.challenge_id:
+                    return self._result_from_snapshot(run_id, thread_id, snapshot)
+            self._graph.invoke(Command(resume=normalized_resume_payload), config=config)
             snapshot = cast(StateSnapshot, self._graph.get_state(config))
             previous_status = run.status
             run.status = self._status_from_snapshot(snapshot)
             run.current_stage = self._current_stage_from_snapshot(snapshot) or run.current_stage
             run.current_node = self._current_node_from_snapshot(snapshot)
+            run.scope_revision = self._scope_revision_from_snapshot(snapshot) or run.scope_revision
             self._record_transition(
                 session,
                 run,
                 from_status=previous_status,
                 to_status=run.status,
-                reason_code="workflow_resumed",
+                reason_code=self._reason_code_from_snapshot(snapshot),
                 node_name=run.current_node,
                 checkpoint_ref=self._checkpoint_id(snapshot),
             )
@@ -117,6 +139,12 @@ class WorkflowRuntime:
             raise ValueError(f"unknown run_id: {run_id}")
         return run
 
+    def _load_project(self, session: Session, project_id: str) -> Project:
+        project = session.get(Project, project_id)
+        if project is None:
+            raise ValueError(f"unknown project_id: {project_id}")
+        return project
+
     def _ensure_run_identity(self, run: ReportRun) -> str:
         thread_id = run.thread_id or thread_id_for_run(run.id)
         run.thread_id = thread_id
@@ -141,6 +169,15 @@ class WorkflowRuntime:
         )
 
     def _status_from_snapshot(self, snapshot: StateSnapshot) -> str:
+        stage = self._current_stage_from_snapshot(snapshot)
+        if stage == "waiting_confirmation":
+            return "waiting"
+        if stage == "approved":
+            return "approved"
+        if stage == "rejected":
+            return "rejected"
+        if stage == "cancelled":
+            return "cancelled"
         return "waiting" if snapshot.interrupts else "completed"
 
     def _current_stage_from_snapshot(self, snapshot: StateSnapshot) -> str | None:
@@ -154,6 +191,75 @@ class WorkflowRuntime:
     def _checkpoint_id(self, snapshot: StateSnapshot) -> str | None:
         value = snapshot.config.get("configurable", {}).get("checkpoint_id")
         return value if isinstance(value, str) else None
+
+    def _scope_revision_from_snapshot(self, snapshot: StateSnapshot) -> int | None:
+        value = snapshot.values.get("scope_revision")
+        return value if isinstance(value, int) else None
+
+    def _reason_code_from_snapshot(self, snapshot: StateSnapshot, started: bool = False) -> str:
+        stage = self._current_stage_from_snapshot(snapshot)
+        if started:
+            return "generation_confirmation_started"
+        if stage == "waiting_confirmation":
+            return "generation_confirmation_waiting"
+        if stage == "approved":
+            return "generation_confirmation_approved"
+        if stage == "rejected":
+            return "generation_confirmation_rejected"
+        if stage == "cancelled":
+            return "generation_confirmation_cancelled"
+        return "workflow_resumed"
+
+    def _load_pending_generation_approval(
+        self, session: Session, run_id: str
+    ) -> HumanApproval | None:
+        return session.scalar(
+            select(HumanApproval).where(
+                HumanApproval.run_id == run_id,
+                HumanApproval.approval_type == "generation",
+                HumanApproval.status == "pending",
+            )
+        )
+
+    def _resume_challenge_id(self, resume_payload: Mapping[str, object]) -> str:
+        value = resume_payload.get("challenge_id") or resume_payload.get("approval_ref")
+        if not isinstance(value, str) or not value:
+            raise ValueError("challenge_id is required")
+        return value
+
+    def _initial_state(self, run: ReportRun, project: Project) -> dict[str, object]:
+        state = build_initial_state(run.id)
+        state.update(
+            {
+                "project_id": run.project_id,
+                "requester_id": "local-demo",
+                "period_key": run.period_key,
+                "period_start": run.period_start.isoformat(),
+                "period_end": run.period_end.isoformat(),
+                "project_timezone": project.timezone,
+                "report_period": {
+                    "start_at": run.period_start.isoformat(),
+                    "end_at": run.period_end.isoformat(),
+                    "timezone": project.timezone,
+                },
+                "scope_revision": run.scope_revision or 1,
+                "approval_revision": 0,
+                "requested_action": None,
+                "resume_from": "load_project_config",
+                "cancel_requested": False,
+                "scope_override": None,
+                "scope": {},
+                "approval": {},
+                "control": {
+                    "requested_action": None,
+                    "resume_from": "load_project_config",
+                    "cancel_requested": False,
+                    "scope_override": None,
+                },
+                "error": {},
+            }
+        )
+        return state
 
     def _record_transition(
         self,

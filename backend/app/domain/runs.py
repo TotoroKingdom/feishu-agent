@@ -27,6 +27,8 @@ class RunCreationService:
                 existing.graph_version = WORKFLOW_GRAPH_VERSION
             if not existing.state_schema_version:
                 existing.state_schema_version = STATE_SCHEMA_VERSION
+            if not existing.scope_revision:
+                existing.scope_revision = 1
             if not existing.current_stage:
                 existing.current_stage = "created"
             return existing
@@ -41,6 +43,7 @@ class RunCreationService:
             status="created",
             graph_version=WORKFLOW_GRAPH_VERSION,
             state_schema_version=STATE_SCHEMA_VERSION,
+            scope_revision=1,
             current_stage="created",
             current_node=None,
         )

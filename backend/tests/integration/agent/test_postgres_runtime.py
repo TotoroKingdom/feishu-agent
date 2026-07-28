@@ -13,7 +13,7 @@ from app.agent.checkpoint import open_postgres_checkpointer
 from app.agent.runtime import WorkflowRuntime, WorkflowWorker
 from app.agent.state import thread_id_for_run
 from app.core.config import Settings
-from app.db.models import Project, ReportRun, RunStatusHistory
+from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
 from app.domain.runs import RunCreationService
 
 
@@ -63,12 +63,21 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
             restarted_worker = WorkflowWorker(factory, saver)
             assert restarted_worker.recover_waiting_runs() == [run_id]
 
-            resumed = restarted_worker.resume(run_id, {"action": "continue"})
-            assert resumed.status == "completed"
+            resumed = restarted_worker.resume(
+                run_id,
+                {
+                    "action": "approve_generation",
+                    "challenge_id": started.snapshot.values["approval"]["challenge_id"],
+                    "approval_revision": started.snapshot.values["approval"]["approval_revision"],
+                    "presented_hash": started.snapshot.values["scope"]["scope_hash"],
+                    "actor_id": "local-demo",
+                },
+            )
+            assert resumed.status == "approved"
 
             snapshot = restarted_worker.inspect(run_id)
             assert snapshot is not None
-            assert snapshot.values["current_stage"] == "completed"
+            assert snapshot.values["current_stage"] == "approved"
 
             with factory() as session:
                 run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -79,11 +88,13 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 ).all()
                 assert run_row is not None
                 assert run_row.thread_id == thread_id
-                assert run_row.status == "completed"
-                assert [row.to_status for row in history_rows] == ["waiting", "completed"]
+                assert run_row.status == "approved"
+                assert run_row.scope_revision == 1
+                assert [row.to_status for row in history_rows] == ["waiting", "approved"]
         finally:
             saver.delete_thread(thread_id)
             with factory() as session:
+                session.query(HumanApproval).filter(HumanApproval.run_id == run_id).delete()
                 session.query(RunStatusHistory).filter(RunStatusHistory.run_id == run_id).delete()
                 session.query(ReportRun).filter(ReportRun.id == run_id).delete()
                 session.query(Project).filter(Project.id == project.id).delete()

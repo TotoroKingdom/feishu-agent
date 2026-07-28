@@ -45,7 +45,14 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     first = runtime.start(run_id)
     second = runtime.start(run_id)
     snapshot = runtime.inspect(run_id)
-    resumed = runtime.resume(run_id, {"action": "continue"})
+    resume_payload = {
+        "action": "approve_generation",
+        "challenge_id": first.snapshot.values["approval"]["challenge_id"],
+        "approval_revision": first.snapshot.values["approval"]["approval_revision"],
+        "presented_hash": first.snapshot.values["scope"]["scope_hash"],
+        "actor_id": "local-demo",
+    }
+    resumed = runtime.resume(run_id, resume_payload)
     completed = runtime.inspect(run_id)
 
     assert first.status == "waiting"
@@ -53,17 +60,18 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert first.checkpoint_id is not None
     assert second.checkpoint_id == first.checkpoint_id
     assert snapshot is not None
-    assert snapshot.values["current_stage"] == "awaiting_resume"
-    assert resumed.status == "completed"
+    assert snapshot.values["current_stage"] == "waiting_confirmation"
+    assert resumed.status == "approved"
     assert completed is not None
-    assert completed.values["current_stage"] == "completed"
+    assert completed.values["current_stage"] == "approved"
 
     with factory() as session:
         row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
-        assert row.status == "completed"
-        assert row.current_stage == "completed"
+        assert row.status == "approved"
+        assert row.current_stage == "approved"
+        assert row.scope_revision == 1
 
 
 def test_worker_restart_finds_waiting_runs_and_resumes_them() -> None:
@@ -76,5 +84,14 @@ def test_worker_restart_finds_waiting_runs_and_resumes_them() -> None:
     restarted_worker = WorkflowWorker(factory, saver)
     assert restarted_worker.recover_waiting_runs() == [run_id]
 
-    resumed = restarted_worker.resume(run_id, {"action": "continue"})
-    assert resumed.status == "completed"
+    resumed = restarted_worker.resume(
+        run_id,
+        {
+            "action": "approve_generation",
+            "challenge_id": first.snapshot.values["approval"]["challenge_id"],
+            "approval_revision": first.snapshot.values["approval"]["approval_revision"],
+            "presented_hash": first.snapshot.values["scope"]["scope_hash"],
+            "actor_id": "local-demo",
+        },
+    )
+    assert resumed.status == "approved"

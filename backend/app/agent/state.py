@@ -21,11 +21,34 @@ _FORBIDDEN_KEY_FRAGMENTS = (
 class WorkflowState(TypedDict, total=False):
     run_id: str
     thread_id: str
+    project_id: str
+    requester_id: str
     graph_version: str
     state_schema_version: int
     current_stage: str
     current_node: str
-    requested_action: Literal["continue", "cancel"]
+    period_key: str
+    report_period: dict[str, object]
+    selected_repository_ids: list[str]
+    feishu_resource_refs: list[str]
+    user_instructions: str
+    expected_publish_group_ref: str | None
+    read_plan: list[object]
+    scope_revision: int
+    scope_override: dict[str, object]
+    scope: dict[str, object]
+    approval_revision: int
+    approval: dict[str, object]
+    control: dict[str, object]
+    error: dict[str, object]
+    requested_action: Literal[
+        "approve_generation",
+        "modify_generation_scope",
+        "cancel_run",
+        "reject_generation",
+        "continue",
+        "cancel",
+    ]
     resume_from: str
     cancel_requested: bool
     error_code: str
@@ -47,8 +70,19 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "graph_version": WORKFLOW_GRAPH_VERSION,
         "state_schema_version": STATE_SCHEMA_VERSION,
         "current_stage": "created",
-        "current_node": "bootstrap_run",
-        "resume_from": "bootstrap_run",
+        "current_node": "load_project_config",
+        "scope_revision": 1,
+        "approval_revision": 0,
+        "scope": {},
+        "approval": {},
+        "control": {
+            "requested_action": None,
+            "resume_from": "load_project_config",
+            "cancel_requested": False,
+        },
+        "error": {},
+        "requested_action": "continue",
+        "resume_from": "load_project_config",
         "cancel_requested": False,
     }
     ensure_state_is_safe(state)

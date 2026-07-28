@@ -7,63 +7,378 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
-from app.agent.state import (
-    STATE_SCHEMA_VERSION,
-    WORKFLOW_GRAPH_VERSION,
-    WorkflowState,
-    ensure_state_is_safe,
+from app.approvals import (
+    APPROVAL_ACTION_APPROVE,
+    APPROVAL_ACTION_CANCEL,
+    APPROVAL_ACTION_CONTINUE,
+    APPROVAL_ACTION_LEGACY_CANCEL,
+    APPROVAL_ACTION_MODIFY,
+    APPROVAL_ACTION_REJECT,
+    GenerationApprovalStore,
+    build_generation_scope,
 )
+from app.agent.state import WorkflowState, ensure_state_is_safe
 
 
 def build_workflow_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
+    approval_store: GenerationApprovalStore | None = None,
 ) -> Any:
+    store = approval_store or _MissingGenerationApprovalStore()
     builder = StateGraph(WorkflowState)
-    builder.add_node("bootstrap_run", _bootstrap_run)
-    builder.add_node("await_resume", _await_resume)
-    builder.add_edge(START, "bootstrap_run")
-    builder.add_edge("bootstrap_run", "await_resume")
-    builder.add_edge("await_resume", END)
-    return builder.compile(checkpointer=checkpointer, name=WORKFLOW_GRAPH_VERSION)
+    builder.add_node("load_project_config", _load_project_config)
+    builder.add_node("build_generation_scope", _build_generation_scope)
+    builder.add_node("request_generation_confirmation", _request_generation_confirmation(store))
+    builder.add_node("wait_generation_confirmation", _wait_generation_confirmation(store))
+    builder.add_edge(START, "load_project_config")
+    builder.add_edge("load_project_config", "build_generation_scope")
+    builder.add_edge("build_generation_scope", "request_generation_confirmation")
+    builder.add_edge("request_generation_confirmation", "wait_generation_confirmation")
+    builder.add_conditional_edges(
+        "wait_generation_confirmation",
+        _generation_approval_route,
+        {
+            "build_generation_scope": "build_generation_scope",
+            END: END,
+        },
+    )
+    return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
-def _bootstrap_run(state: WorkflowState) -> dict[str, object]:
+def _load_project_config(state: WorkflowState) -> dict[str, object]:
     ensure_state_is_safe(state)
+    report_period = _ensure_report_period(state)
     return {
-        "graph_version": WORKFLOW_GRAPH_VERSION,
-        "state_schema_version": STATE_SCHEMA_VERSION,
-        "current_stage": "awaiting_resume",
-        "current_node": "await_resume",
-        "resume_from": "bootstrap_run",
+        "current_stage": "config_loaded",
+        "current_node": "build_generation_scope",
+        "report_period": report_period,
+        "control": {
+            "requested_action": None,
+            "resume_from": "load_project_config",
+            "cancel_requested": False,
+            "scope_override": None,
+        },
+        "requested_action": None,
+        "resume_from": "load_project_config",
+        "cancel_requested": False,
     }
 
 
-def _await_resume(state: WorkflowState) -> dict[str, object]:
+def _build_generation_scope(state: WorkflowState) -> dict[str, object]:
     ensure_state_is_safe(state)
-    prompt = {
-        "run_id": state["run_id"],
-        "thread_id": state["thread_id"],
-        "current_stage": state["current_stage"],
-        "current_node": "await_resume",
+    scope_revision = int(state.get("scope_revision", 1))
+    requested_action = _normalize_action_if_present(state.get("requested_action"))
+    if requested_action == APPROVAL_ACTION_MODIFY:
+        scope_revision += 1
+
+    scope = build_generation_scope(state)
+    approval = {
+        "active_approval_ref": None,
+        "approval_type": "generation",
+        "approval_revision": scope_revision,
+        "status": "none",
+        "approved_scope_hash": None,
+        "challenge_id": None,
+        "requested_from": [],
     }
-    resume_payload = interrupt(prompt)
-    if not isinstance(resume_payload, Mapping):
-        raise ValueError("resume payload must be a mapping")
-    ensure_state_is_safe(resume_payload)
-    action = str(resume_payload.get("action", "")).strip().casefold()
-    if action not in {"continue", "cancel"}:
-        raise ValueError("unsupported resume action")
-    if action == "cancel":
+    return {
+        "scope_revision": scope_revision,
+        "approval_revision": scope_revision,
+        "scope": scope,
+        "approval": approval,
+        "current_stage": "requesting_confirmation",
+        "current_node": "request_generation_confirmation",
+        "requested_action": None,
+        "resume_from": "build_generation_scope",
+        "control": {
+            "requested_action": None,
+            "resume_from": "build_generation_scope",
+            "cancel_requested": False,
+            "scope_override": None,
+        },
+        "cancel_requested": False,
+    }
+
+
+def _request_generation_confirmation(
+    store: GenerationApprovalStore,
+):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        scope = _require_scope(state)
+        scope_revision = int(state.get("scope_revision", 1))
+        approval = store.ensure_pending_generation_approval(
+            run_id=state["run_id"],
+            revision=scope_revision,
+            scope_hash=_require_scope_hash(scope),
+            requested_from=_requested_from(state),
+        )
         return {
-            "requested_action": "cancel",
-            "cancel_requested": True,
-            "current_stage": "cancelled",
-            "current_node": "complete_run",
-            "resume_from": "await_resume",
+            "approval": {
+                "active_approval_ref": approval.id,
+                "approval_type": approval.approval_type,
+                "approval_revision": approval.revision,
+                "status": approval.status,
+                "approved_scope_hash": None,
+                "challenge_id": approval.challenge_id,
+                "requested_from": list(approval.requested_from),
+            },
+            "current_stage": "waiting_confirmation",
+            "current_node": "wait_generation_confirmation",
+            "requested_action": None,
+            "resume_from": "request_generation_confirmation",
+            "control": {
+                "requested_action": None,
+                "resume_from": "request_generation_confirmation",
+                "cancel_requested": False,
+                "scope_override": None,
+            },
+            "cancel_requested": False,
         }
+
+    return _node
+
+
+def _wait_generation_confirmation(store: GenerationApprovalStore):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        scope = _require_scope(state)
+        approval = _require_approval(state)
+        prompt = {
+            "run_id": state["run_id"],
+            "current_stage": state["current_stage"],
+            "current_node": "wait_generation_confirmation",
+            "scope_revision": state.get("scope_revision", 1),
+            "approval_revision": state.get("approval_revision", 1),
+            "challenge_id": approval["challenge_id"],
+            "approval_ref": approval["active_approval_ref"],
+            "presented_hash": _require_scope_hash(scope),
+            "allowed_actions": [
+                APPROVAL_ACTION_APPROVE,
+                APPROVAL_ACTION_MODIFY,
+                APPROVAL_ACTION_CANCEL,
+                APPROVAL_ACTION_REJECT,
+            ],
+        }
+        resume_payload = interrupt(prompt)
+        if not isinstance(resume_payload, Mapping):
+            raise ValueError("resume payload must be a mapping")
+        ensure_state_is_safe(resume_payload)
+
+        action = _normalize_action(resume_payload.get("action"))
+        challenge_id = _resume_challenge_id(resume_payload)
+        expected_challenge_id = str(approval["challenge_id"])
+        if challenge_id != expected_challenge_id:
+            raise ValueError("approval challenge_id mismatch")
+        if _resume_revision(resume_payload) != int(state.get("approval_revision", 1)):
+            raise ValueError("approval revision mismatch")
+        if _resume_presented_hash(resume_payload) != _require_scope_hash(scope):
+            raise ValueError("presented scope hash mismatch")
+
+        actor_id = _resume_actor_id(resume_payload, state)
+        if action == APPROVAL_ACTION_MODIFY:
+            override = _resume_scope_override(resume_payload)
+            store.mark_generation_approval_decision(
+                challenge_id=challenge_id,
+                action=APPROVAL_ACTION_MODIFY,
+                actor_id=actor_id,
+                supplement={"scope_override": override},
+            )
+            return {
+                "requested_action": APPROVAL_ACTION_MODIFY,
+                "scope_override": override,
+                "approval": {
+                    "active_approval_ref": approval["active_approval_ref"],
+                    "approval_type": approval["approval_type"],
+                    "approval_revision": approval["approval_revision"],
+                    "status": "superseded",
+                    "approved_scope_hash": None,
+                    "challenge_id": approval["challenge_id"],
+                    "requested_from": approval["requested_from"],
+                },
+                "current_stage": "building_generation_scope",
+                "current_node": "build_generation_scope",
+                "resume_from": "wait_generation_confirmation",
+                "control": {
+                    "requested_action": APPROVAL_ACTION_MODIFY,
+                    "resume_from": "wait_generation_confirmation",
+                    "cancel_requested": False,
+                    "scope_override": override,
+                },
+                "cancel_requested": False,
+            }
+
+        decision = store.mark_generation_approval_decision(
+            challenge_id=challenge_id,
+            action=action,
+            actor_id=actor_id,
+        )
+        status_by_action = {
+            APPROVAL_ACTION_APPROVE: "approved",
+            APPROVAL_ACTION_CONTINUE: "approved",
+            APPROVAL_ACTION_CANCEL: "cancelled",
+            APPROVAL_ACTION_LEGACY_CANCEL: "cancelled",
+            APPROVAL_ACTION_REJECT: "rejected",
+        }
+        current_stage = status_by_action[action]
+        current_node = "complete_run"
+        patch: dict[str, object] = {
+            "requested_action": action,
+            "approval": {
+                "active_approval_ref": approval["active_approval_ref"],
+                "approval_type": approval["approval_type"],
+                "approval_revision": approval["approval_revision"],
+                "status": decision.status,
+                "approved_scope_hash": _require_scope_hash(scope)
+                if decision.status == "approved"
+                else None,
+                "challenge_id": approval["challenge_id"],
+                "requested_from": approval["requested_from"],
+            },
+            "current_stage": current_stage,
+            "current_node": current_node,
+            "resume_from": "wait_generation_confirmation",
+            "control": {
+                "requested_action": action,
+                "resume_from": "wait_generation_confirmation",
+                "cancel_requested": decision.status == "cancelled",
+                "scope_override": None,
+            },
+            "cancel_requested": decision.status == "cancelled",
+        }
+        return patch
+
+    return _node
+
+
+def _generation_approval_route(state: WorkflowState) -> str:
+    requested_action = _normalize_action_if_present(state.get("requested_action"))
+    if requested_action is None:
+        return END
+    if requested_action == APPROVAL_ACTION_MODIFY:
+        return "build_generation_scope"
+    return END
+
+
+def _ensure_report_period(state: Mapping[str, object]) -> dict[str, object]:
+    report_period = state.get("report_period")
+    if isinstance(report_period, Mapping):
+        return {
+            "start_at": _as_string(report_period.get("start_at"), "start_at"),
+            "end_at": _as_string(report_period.get("end_at"), "end_at"),
+            "timezone": _as_string(report_period.get("timezone"), "timezone"),
+        }
+
     return {
-        "requested_action": "continue",
-        "current_stage": "completed",
-        "current_node": "complete_run",
-        "resume_from": "await_resume",
+        "start_at": _as_string(state.get("period_start"), "period_start"),
+        "end_at": _as_string(state.get("period_end"), "period_end"),
+        "timezone": _as_string(state.get("project_timezone"), "project_timezone"),
     }
+
+
+def _require_scope(state: Mapping[str, object]) -> dict[str, object]:
+    scope = state.get("scope")
+    if not isinstance(scope, Mapping):
+        raise ValueError("scope is required")
+    scope_dict = dict(scope)
+    if "scope_hash" not in scope_dict:
+        raise ValueError("scope hash is required")
+    return scope_dict
+
+
+def _require_scope_hash(scope: Mapping[str, object]) -> str:
+    value = scope.get("scope_hash")
+    if not isinstance(value, str) or not value:
+        raise ValueError("scope hash is required")
+    return value
+
+
+def _require_approval(state: Mapping[str, object]) -> dict[str, object]:
+    approval = state.get("approval")
+    if not isinstance(approval, Mapping):
+        raise ValueError("approval is required")
+    approval_dict = dict(approval)
+    required_keys = ("active_approval_ref", "challenge_id", "approval_revision", "requested_from")
+    for key in required_keys:
+        if key not in approval_dict:
+            raise ValueError(f"approval.{key} is required")
+    return approval_dict
+
+
+def _resume_challenge_id(payload: Mapping[str, object]) -> str:
+    value = payload.get("challenge_id") or payload.get("approval_ref")
+    if not isinstance(value, str) or not value:
+        raise ValueError("challenge_id is required")
+    return value
+
+
+def _resume_revision(payload: Mapping[str, object]) -> int:
+    value = payload.get("approval_revision")
+    if not isinstance(value, int):
+        raise ValueError("approval_revision is required")
+    return value
+
+
+def _resume_presented_hash(payload: Mapping[str, object]) -> str:
+    value = payload.get("presented_hash")
+    if not isinstance(value, str) or not value:
+        raise ValueError("presented_hash is required")
+    return value
+
+
+def _resume_actor_id(payload: Mapping[str, object], state: Mapping[str, object]) -> str:
+    value = payload.get("actor_id") or state.get("requester_id") or "local-demo"
+    if not isinstance(value, str) or not value:
+        return "local-demo"
+    return value
+
+
+def _resume_scope_override(payload: Mapping[str, object]) -> dict[str, object]:
+    override = payload.get("scope_override") or payload.get("payload")
+    if not isinstance(override, Mapping):
+        raise ValueError("scope_override is required for modify_generation_scope")
+    return dict(override)
+
+
+def _requested_from(state: Mapping[str, object]) -> list[str]:
+    requester_id = state.get("requester_id")
+    if isinstance(requester_id, str) and requester_id:
+        return [requester_id]
+    return ["local-demo"]
+
+
+def _normalize_action(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("action is required")
+    normalized = value.strip().casefold()
+    action_aliases = {
+        APPROVAL_ACTION_APPROVE: APPROVAL_ACTION_APPROVE,
+        APPROVAL_ACTION_CONTINUE: APPROVAL_ACTION_APPROVE,
+        APPROVAL_ACTION_MODIFY: APPROVAL_ACTION_MODIFY,
+        APPROVAL_ACTION_CANCEL: APPROVAL_ACTION_CANCEL,
+        APPROVAL_ACTION_LEGACY_CANCEL: APPROVAL_ACTION_CANCEL,
+        APPROVAL_ACTION_REJECT: APPROVAL_ACTION_REJECT,
+    }
+    if normalized not in action_aliases:
+        raise ValueError(f"unsupported generation approval action: {value}")
+    return action_aliases[normalized]
+
+
+def _normalize_action_if_present(value: object) -> str | None:
+    if value is None:
+        return None
+    return _normalize_action(value)
+
+
+def _as_string(value: object, field_name: str) -> str:
+    if isinstance(value, str):
+        return value
+    raise ValueError(f"{field_name} must be a string")
+
+
+class _MissingGenerationApprovalStore:
+    def ensure_pending_generation_approval(self, **_: object) -> Any:
+        raise RuntimeError("approval_store is required")
+
+    def mark_generation_approval_decision(self, **_: object) -> Any:
+        raise RuntimeError("approval_store is required")
