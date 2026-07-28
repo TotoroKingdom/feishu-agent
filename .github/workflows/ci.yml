@@ -24,7 +24,7 @@ jobs:
           ruff check .
           ruff format --check .
           mypy app
-          pytest tests/test_smoke.py -q
+          pytest tests -q
           alembic upgrade head --sql > /tmp/alembic.sql
       - name: Install frontend
         working-directory: frontend

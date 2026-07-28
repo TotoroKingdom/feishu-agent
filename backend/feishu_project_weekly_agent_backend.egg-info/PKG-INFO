@@ -4,9 +4,11 @@ Version: 0.1.0
 Summary: Backend foundation for the Feishu project weekly agent
 Requires-Python: <3.14,>=3.11
 Requires-Dist: alembic==1.14.1
+Requires-Dist: cryptography==44.0.0
 Requires-Dist: fastapi==0.115.6
 Requires-Dist: psycopg[binary]==3.2.3
 Requires-Dist: pydantic==2.10.4
+Requires-Dist: pydantic-settings==2.7.1
 Requires-Dist: sqlalchemy==2.0.36
 Requires-Dist: uvicorn[standard]==0.34.0
 Provides-Extra: dev

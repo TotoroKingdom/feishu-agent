@@ -25,7 +25,7 @@ def main() -> None:
     run([*backend_python, "-m", "ruff", "check", "."], BACKEND)
     run([*backend_python, "-m", "ruff", "format", "--check", "."], BACKEND)
     run([*backend_python, "-m", "mypy", "app"], BACKEND)
-    run([*backend_python, "-m", "pytest", "tests/test_smoke.py", "-q"], BACKEND)
+    run([*backend_python, "-m", "pytest", "tests", "-q"], BACKEND)
     run([*backend_python, "-m", "alembic", "upgrade", "head", "--sql"], BACKEND)
 
     run([NPM, "run", "lint"], FRONTEND)
