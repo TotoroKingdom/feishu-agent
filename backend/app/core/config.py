@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     github_provider: Literal["fake", "real"] = "fake"
     llm_provider: Literal["fake", "real"] = "fake"
     log_level: str = "INFO"
+    database_url: str = "postgresql+psycopg://feishu_agent:change-me@127.0.0.1:5432/feishu_agent"
+    redis_url: str = "redis://127.0.0.1:6379/0"
     app_encryption_key: SecretStr | None = None
     internal_service_token: SecretStr | None = None
 
