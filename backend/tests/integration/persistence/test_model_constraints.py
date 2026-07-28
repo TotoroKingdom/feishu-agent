@@ -12,8 +12,13 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "project_repositories",
         "feishu_resources",
         "report_runs",
+        "run_status_history",
     }
     assert any(
         constraint["name"] == "uq_report_runs_project_period"
+        for constraint in inspector.get_unique_constraints("report_runs")
+    )
+    assert any(
+        constraint["name"] == "uq_report_runs_thread_id"
         for constraint in inspector.get_unique_constraints("report_runs")
     )

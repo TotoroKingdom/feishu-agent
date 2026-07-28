@@ -1,8 +1,10 @@
 from logging.config import fileConfig
+from pathlib import Path
 
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
+from app.core.config import Settings
 from app.db.models import Base
 
 config = context.config
@@ -10,6 +12,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
+config.set_main_option(
+    "sqlalchemy.url",
+    Settings(_env_file=ROOT_ENV).database_url.replace("%", "%%"),
+)
 target_metadata = Base.metadata
 
 
