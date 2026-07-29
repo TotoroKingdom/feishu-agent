@@ -73,11 +73,22 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                     "actor_id": "local-demo",
                 },
             )
-            assert resumed.status == "completed"
+            publish_resumed = restarted_worker.resume(
+                run_id,
+                {
+                    "action": "approve_publish",
+                    "challenge_id": resumed.snapshot.values["approval"]["challenge_id"],
+                    "approval_revision": resumed.snapshot.values["approval"]["approval_revision"],
+                    "presented_hash": resumed.snapshot.values["publish"]["plan_hash"],
+                    "actor_id": "local-demo",
+                },
+            )
+            assert resumed.status == "waiting"
+            assert publish_resumed.status == "completed"
 
             snapshot = restarted_worker.inspect(run_id)
             assert snapshot is not None
-            assert snapshot.values["current_stage"] == "report_rendered"
+            assert snapshot.values["current_stage"] == "publish_approved"
             assert snapshot.values["current_node"] == "complete_run"
             assert isinstance(snapshot.values["source_batch_refs"], list)
             assert len(snapshot.values["source_batch_refs"]) == 2
@@ -96,9 +107,9 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 assert run_row is not None
                 assert run_row.thread_id == thread_id
                 assert run_row.status == "completed"
-                assert run_row.current_stage == "report_rendered"
+                assert run_row.current_stage == "publish_approved"
                 assert run_row.scope_revision == 1
-                assert [row.to_status for row in history_rows] == ["waiting", "completed"]
+                assert [row.to_status for row in history_rows] == ["waiting", "waiting", "completed"]
                 assert metric_row is not None
         finally:
             saver.delete_thread(thread_id)

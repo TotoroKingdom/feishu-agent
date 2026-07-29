@@ -20,6 +20,7 @@ from app.approvals import (
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
 from app.metrics.service import MetricStageOutcome, MetricsService
+from app.publishing.service import PublishPlanOutcome, PublishResumeOutcome, PublishingService
 from app.reporting.service import ReportStageOutcome, ReportingService
 
 
@@ -29,11 +30,13 @@ def build_workflow_graph(
     collection_service: CollectionService | None = None,
     metrics_service: MetricsService | None = None,
     reporting_service: ReportingService | None = None,
+    publishing_service: PublishingService | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
     collector = collection_service or _MissingCollectionService()
     metrics = metrics_service or _MissingMetricsService()
     reporter = reporting_service or _MissingReportingService()
+    publisher = publishing_service or _MissingPublishingService()
     builder = StateGraph(WorkflowState)
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
@@ -48,6 +51,9 @@ def build_workflow_graph(
     builder.add_node("generate_structured_report", _generate_structured_report(reporter))
     builder.add_node("verify_grounding", _verify_grounding(reporter))
     builder.add_node("render_report", _render_report(reporter))
+    builder.add_node("build_publish_plan", _build_publish_plan(publisher))
+    builder.add_node("request_publish_confirmation", _request_publish_confirmation(publisher))
+    builder.add_node("wait_publish_confirmation", _wait_publish_confirmation(publisher))
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -125,7 +131,39 @@ def build_workflow_graph(
             END: END,
         },
     )
-    builder.add_edge("render_report", END)
+    builder.add_conditional_edges(
+        "render_report",
+        _collection_route,
+        {
+            "build_publish_plan": "build_publish_plan",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "build_publish_plan",
+        _collection_route,
+        {
+            "request_publish_confirmation": "request_publish_confirmation",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "request_publish_confirmation",
+        _collection_route,
+        {
+            "wait_publish_confirmation": "wait_publish_confirmation",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "wait_publish_confirmation",
+        _publish_approval_route,
+        {
+            "wait_publish_confirmation": "wait_publish_confirmation",
+            "generate_structured_report": "generate_structured_report",
+            END: END,
+        },
+    )
     return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
@@ -579,11 +617,306 @@ def _render_report(reporter: ReportingService):
             }
         return {
             "current_stage": "report_rendered",
-            "current_node": "complete_run",
+            "current_node": "build_publish_plan",
             "report_version_ref": outcome.report_version_ref,
             "rendered_report_ref": outcome.rendered_report_ref,
             "error_code": None,
             "error_summary": None,
+        }
+
+    return _node
+
+
+def _build_publish_plan(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        report_version_ref = state.get("report_version_ref")
+        if not isinstance(report_version_ref, str) or not report_version_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "build_publish_plan",
+                "error_code": "REPORT_VERSION_MISSING",
+                "error_summary": "Report version missing from state",
+            }
+        outcome = publisher.build_publish_plan(state["run_id"], report_version_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "build_publish_plan",
+                "publish_plan_ref": outcome.publish_plan_ref or state.get("publish_plan_ref"),
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish_plan_ref": outcome.publish_plan_ref,
+            "publish": {
+                "plan_hash": outcome.plan_hash,
+                "operation_refs": [],
+                "next_operation_index": 0,
+                "side_effect_status": "not_started",
+            },
+            "approval": {
+                "active_approval_ref": None,
+                "approval_type": "publish",
+                "approval_revision": outcome.publish_plan_version,
+                "status": "none",
+                "approved_scope_hash": None,
+                "approved_plan_hash": None,
+                "challenge_id": None,
+                "requested_from": [],
+            },
+            "approval_revision": outcome.publish_plan_version,
+            "current_stage": "building_publish_plan",
+            "current_node": "request_publish_confirmation",
+            "requested_action": None,
+            "resume_from": "build_publish_plan",
+            "control": {
+                "requested_action": None,
+                "resume_from": "build_publish_plan",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _request_publish_confirmation(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "request_publish_confirmation",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        approval = publisher.request_publish_confirmation(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            requested_from=_requested_from(state),
+        )
+        if approval.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "request_publish_confirmation",
+                "error_code": approval.error_code,
+                "error_summary": approval.error_summary,
+                "publish_plan_ref": approval.publish_plan_ref or publish_plan_ref,
+            }
+        return {
+            "publish_plan_ref": approval.publish_plan_ref,
+            "publish": {
+                "plan_hash": approval.plan_hash,
+                "operation_refs": [],
+                "next_operation_index": 0,
+                "side_effect_status": "not_started",
+            },
+            "approval": {
+                "active_approval_ref": approval.approval_ref,
+                "approval_type": "publish",
+                "approval_revision": approval.approval_revision,
+                "status": "pending",
+                "approved_scope_hash": None,
+                "approved_plan_hash": None,
+                "challenge_id": approval.challenge_id,
+                "requested_from": _requested_from(state),
+            },
+            "approval_revision": approval.approval_revision,
+            "current_stage": "waiting_publish_approval",
+            "current_node": "wait_publish_confirmation",
+            "requested_action": None,
+            "resume_from": "request_publish_confirmation",
+            "control": {
+                "requested_action": None,
+                "resume_from": "request_publish_confirmation",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _wait_publish_confirmation(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approval = _require_approval(state)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "wait_publish_confirmation",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        plan_hash = _require_publish_plan_hash(publish)
+        prompt = {
+            "run_id": state["run_id"],
+            "current_stage": state["current_stage"],
+            "current_node": "wait_publish_confirmation",
+            "publish_plan_ref": publish_plan_ref,
+            "approval_revision": state.get("approval_revision", approval["approval_revision"]),
+            "challenge_id": approval["challenge_id"],
+            "approval_ref": approval["active_approval_ref"],
+            "presented_hash": plan_hash,
+            "allowed_actions": [
+                "approve_publish",
+                "regenerate_report",
+                "update_supplement",
+                "cancel_publish",
+            ],
+        }
+        resume_payload = interrupt(prompt)
+        if not isinstance(resume_payload, Mapping):
+            raise ValueError("resume payload must be a mapping")
+        ensure_state_is_safe(resume_payload)
+
+        action = _normalize_publish_action(resume_payload.get("action"))
+        challenge_id = _resume_challenge_id(resume_payload)
+        expected_challenge_id = str(approval["challenge_id"])
+        if challenge_id != expected_challenge_id:
+            raise ValueError("approval challenge_id mismatch")
+        if _resume_revision(resume_payload) != int(state.get("approval_revision", 1)):
+            raise ValueError("approval revision mismatch")
+        if _resume_presented_hash(resume_payload) != plan_hash:
+            outcome = publisher.resume_publish_confirmation(
+                run_id=state["run_id"],
+                publish_plan_ref=publish_plan_ref,
+                approval_ref=str(approval["active_approval_ref"]),
+                challenge_id=challenge_id,
+                approval_revision=int(approval["approval_revision"]),
+                presented_hash=_resume_presented_hash(resume_payload),
+                action=action,
+                actor_id=_resume_actor_id(resume_payload, state),
+                requested_from=approval["requested_from"],
+                supplement=_resume_supplement(resume_payload, action),
+            )
+            if outcome.status == "blocked":
+                return {
+                    "current_stage": "blocked",
+                    "current_node": "wait_publish_confirmation",
+                    "publish_plan_ref": publish_plan_ref,
+                    "error_code": outcome.error_code,
+                    "error_summary": outcome.error_summary,
+                }
+            return {
+                "publish_plan_ref": outcome.publish_plan_ref,
+                "publish": {
+                    "plan_hash": outcome.plan_hash,
+                    "operation_refs": state.get("publish", {}).get("operation_refs", []),
+                    "next_operation_index": 0,
+                    "side_effect_status": "not_started",
+                },
+                "approval": {
+                    "active_approval_ref": outcome.approval_ref,
+                    "approval_type": "publish",
+                    "approval_revision": outcome.approval_revision,
+                    "status": "pending",
+                    "approved_scope_hash": None,
+                    "approved_plan_hash": None,
+                    "challenge_id": outcome.challenge_id,
+                    "requested_from": approval["requested_from"],
+                },
+                "approval_revision": outcome.approval_revision,
+                "current_stage": outcome.current_stage,
+                "current_node": outcome.current_node,
+                "requested_action": action,
+                "resume_from": "wait_publish_confirmation",
+                "control": {
+                    "requested_action": action,
+                    "resume_from": "wait_publish_confirmation",
+                    "cancel_requested": False,
+                    "supplement": _resume_supplement(resume_payload, action),
+                },
+                "cancel_requested": False,
+            }
+
+        outcome = publisher.resume_publish_confirmation(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approval_ref=str(approval["active_approval_ref"]),
+            challenge_id=challenge_id,
+            approval_revision=int(approval["approval_revision"]),
+            presented_hash=plan_hash,
+            action=action,
+            actor_id=_resume_actor_id(resume_payload, state),
+            requested_from=approval["requested_from"],
+            supplement=_resume_supplement(resume_payload, action),
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "wait_publish_confirmation",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        if outcome.current_node == "generate_structured_report":
+            return {
+                "publish_plan_ref": None,
+                "publish": {
+                    "plan_hash": None,
+                    "operation_refs": [],
+                    "next_operation_index": 0,
+                    "side_effect_status": "not_started",
+                },
+                "approval": {
+                    "active_approval_ref": None,
+                    "approval_type": None,
+                    "approval_revision": int(approval["approval_revision"]),
+                    "status": "superseded",
+                    "approved_scope_hash": None,
+                    "approved_plan_hash": None,
+                    "challenge_id": None,
+                    "requested_from": approval["requested_from"],
+                },
+                "approval_revision": int(approval["approval_revision"]),
+                "current_stage": outcome.current_stage,
+                "current_node": outcome.current_node,
+                "requested_action": action,
+                "resume_from": "wait_publish_confirmation",
+                "control": {
+                    "requested_action": action,
+                    "resume_from": "wait_publish_confirmation",
+                    "cancel_requested": False,
+                    "supplement": _resume_supplement(resume_payload, action),
+                },
+                "cancel_requested": False,
+            }
+
+        return {
+            "publish_plan_ref": outcome.publish_plan_ref,
+            "publish": {
+                "plan_hash": outcome.plan_hash,
+                "operation_refs": [],
+                "next_operation_index": 0,
+                "side_effect_status": "not_started",
+            },
+            "approval": {
+                "active_approval_ref": outcome.approval_ref,
+                "approval_type": "publish",
+                "approval_revision": outcome.approval_revision,
+                "status": "approved" if outcome.current_stage == "publish_approved" else "cancelled",
+                "approved_scope_hash": None,
+                "approved_plan_hash": outcome.plan_hash if outcome.current_stage == "publish_approved" else None,
+                "challenge_id": outcome.challenge_id or challenge_id,
+                "requested_from": approval["requested_from"],
+            },
+            "approval_revision": outcome.approval_revision,
+            "current_stage": outcome.current_stage,
+            "current_node": outcome.current_node,
+            "requested_action": action,
+            "resume_from": "wait_publish_confirmation",
+            "control": {
+                "requested_action": action,
+                "resume_from": "wait_publish_confirmation",
+                "cancel_requested": outcome.current_stage == "cancelled",
+                "supplement": _resume_supplement(resume_payload, action),
+            },
+            "cancel_requested": outcome.current_stage == "cancelled",
         }
 
     return _node
@@ -613,7 +946,19 @@ def _collection_route(state: WorkflowState) -> str:
         "generate_structured_report",
         "verify_grounding",
         "render_report",
+        "build_publish_plan",
+        "request_publish_confirmation",
+        "wait_publish_confirmation",
     }:
+        return str(current_node)
+    return END
+
+
+def _publish_approval_route(state: WorkflowState) -> str:
+    if state.get("current_stage") == "blocked":
+        return END
+    current_node = state.get("current_node")
+    if current_node in {"wait_publish_confirmation", "generate_structured_report"}:
         return str(current_node)
     return END
 
@@ -698,6 +1043,15 @@ def _resume_scope_override(payload: Mapping[str, object]) -> dict[str, object]:
     return dict(override)
 
 
+def _resume_supplement(payload: Mapping[str, object], action: str) -> dict[str, object] | None:
+    if action != "update_supplement":
+        return None
+    supplement = payload.get("supplement") or payload.get("payload")
+    if not isinstance(supplement, Mapping):
+        raise ValueError("supplement is required for update_supplement")
+    return dict(supplement)
+
+
 def _requested_from(state: Mapping[str, object]) -> list[str]:
     requester_id = state.get("requester_id")
     if isinstance(requester_id, str) and requester_id:
@@ -728,6 +1082,21 @@ def _normalize_action_if_present(value: object) -> str | None:
     return _normalize_action(value)
 
 
+def _normalize_publish_action(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("action is required")
+    normalized = value.strip().casefold()
+    allowed_actions = {
+        "approve_publish",
+        "regenerate_report",
+        "update_supplement",
+        "cancel_publish",
+    }
+    if normalized not in allowed_actions:
+        raise ValueError(f"unsupported publish approval action: {value}")
+    return normalized
+
+
 def _as_string(value: object, field_name: str) -> str:
     if isinstance(value, str):
         return value
@@ -749,12 +1118,32 @@ def _append_unique(existing: object, new_value: str | None) -> list[str]:
     return deduped
 
 
+def _require_publish_plan_hash(publish: object) -> str:
+    if not isinstance(publish, Mapping):
+        raise ValueError("publish is required")
+    value = publish.get("plan_hash")
+    if not isinstance(value, str) or not value:
+        raise ValueError("publish.plan_hash is required")
+    return value
+
+
 class _MissingGenerationApprovalStore:
     def ensure_pending_generation_approval(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
 
     def mark_generation_approval_decision(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
+
+
+class _MissingPublishingService:
+    def build_publish_plan(self, *_: object, **__: object) -> PublishPlanOutcome:
+        raise RuntimeError("publishing_service is required")
+
+    def request_publish_confirmation(self, *_: object, **__: object) -> PublishPlanOutcome:
+        raise RuntimeError("publishing_service is required")
+
+    def resume_publish_confirmation(self, *_: object, **__: object) -> PublishResumeOutcome:
+        raise RuntimeError("publishing_service is required")
 
 
 class _MissingCollectionService:

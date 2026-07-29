@@ -39,6 +39,19 @@ def make_runtime() -> tuple[
     return runtime, worker, run_id, saver, factory
 
 
+def _publish_payload(snapshot: object, action: str) -> dict[str, object]:
+    values = snapshot.values  # type: ignore[attr-defined]
+    approval = values["approval"]
+    publish = values["publish"]
+    return {
+        "action": action,
+        "challenge_id": approval["challenge_id"],
+        "approval_revision": approval["approval_revision"],
+        "presented_hash": publish["plan_hash"],
+        "actor_id": "local-demo",
+    }
+
+
 def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     runtime, _, run_id, _, factory = make_runtime()
 
@@ -52,7 +65,8 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
         "presented_hash": first.snapshot.values["scope"]["scope_hash"],
         "actor_id": "local-demo",
     }
-    resumed = runtime.resume(run_id, resume_payload)
+    waiting_publish = runtime.resume(run_id, resume_payload)
+    publish_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
     completed = runtime.inspect(run_id)
 
     assert first.status == "waiting"
@@ -61,9 +75,11 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert second.checkpoint_id == first.checkpoint_id
     assert snapshot is not None
     assert snapshot.values["current_stage"] == "waiting_confirmation"
-    assert resumed.status == "completed"
+    assert waiting_publish.status == "waiting"
+    assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
+    assert publish_resume.status == "completed"
     assert completed is not None
-    assert completed.values["current_stage"] == "report_rendered"
+    assert completed.values["current_stage"] == "publish_approved"
     assert completed.values["current_node"] == "complete_run"
     assert isinstance(completed.values["source_batch_refs"], list)
     assert len(completed.values["source_batch_refs"]) == 2
@@ -83,7 +99,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
         assert row.status == "completed"
-        assert row.current_stage == "report_rendered"
+        assert row.current_stage == "publish_approved"
         assert row.scope_revision == 1
         assert metric_row is not None
 
@@ -108,4 +124,4 @@ def test_worker_restart_finds_waiting_runs_and_resumes_them() -> None:
             "actor_id": "local-demo",
         },
     )
-    assert resumed.status == "completed"
+    assert resumed.status == "waiting"

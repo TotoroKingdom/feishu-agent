@@ -16,6 +16,7 @@ from app.agent.graph import build_workflow_graph
 from app.agent.state import build_initial_state, thread_id_for_run
 from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
 from app.metrics.service import MetricsService
+from app.publishing.service import PublishingService
 from app.reporting.service import ReportingService
 
 SessionFactory = Callable[[], Session]
@@ -38,12 +39,14 @@ class WorkflowRuntime:
         collection_service: CollectionService | None = None,
         metrics_service: MetricsService | None = None,
         reporting_service: ReportingService | None = None,
+        publishing_service: PublishingService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._approval_store = GenerationApprovalStore(session_factory)
         self._collection_service = collection_service or CollectionService(session_factory)
         self._metrics_service = metrics_service or MetricsService(session_factory)
         self._reporting_service = reporting_service or ReportingService(session_factory)
+        self._publishing_service = publishing_service or PublishingService(session_factory)
         self._checkpointer: Any = checkpointer or MemorySaver()
         self._graph = build_workflow_graph(
             self._checkpointer,
@@ -51,6 +54,7 @@ class WorkflowRuntime:
             self._collection_service,
             self._metrics_service,
             self._reporting_service,
+            self._publishing_service,
         )
 
     def start(self, run_id: str) -> WorkflowExecutionResult:
@@ -93,7 +97,7 @@ class WorkflowRuntime:
             snapshot = cast(StateSnapshot, self._graph.get_state(config))
             if run.status != "waiting":
                 return self._result_from_snapshot(run_id, thread_id, snapshot)
-            pending = self._load_pending_generation_approval(session, run_id)
+            pending = self._load_pending_approval(session, run_id)
             normalized_resume_payload = dict(resume_payload)
             if pending is not None:
                 if "challenge_id" not in normalized_resume_payload and "approval_ref" not in normalized_resume_payload:
@@ -101,9 +105,23 @@ class WorkflowRuntime:
                     normalized_resume_payload["approval_ref"] = pending.challenge_id
                 if "approval_revision" not in normalized_resume_payload:
                     normalized_resume_payload["approval_revision"] = pending.revision
-                scope_hash = snapshot.values.get("scope", {}).get("scope_hash") if isinstance(snapshot.values.get("scope"), Mapping) else None
-                if "presented_hash" not in normalized_resume_payload and isinstance(scope_hash, str):
-                    normalized_resume_payload["presented_hash"] = scope_hash
+                if "presented_hash" not in normalized_resume_payload:
+                    if pending.approval_type == "generation":
+                        scope_hash = (
+                            snapshot.values.get("scope", {}).get("scope_hash")
+                            if isinstance(snapshot.values.get("scope"), Mapping)
+                            else None
+                        )
+                        if isinstance(scope_hash, str):
+                            normalized_resume_payload["presented_hash"] = scope_hash
+                    elif pending.approval_type == "publish":
+                        publish_hash = (
+                            snapshot.values.get("publish", {}).get("plan_hash")
+                            if isinstance(snapshot.values.get("publish"), Mapping)
+                            else None
+                        )
+                        if isinstance(publish_hash, str):
+                            normalized_resume_payload["presented_hash"] = publish_hash
                 if self._resume_challenge_id(normalized_resume_payload) != pending.challenge_id:
                     return self._result_from_snapshot(run_id, thread_id, snapshot)
             self._graph.invoke(Command(resume=normalized_resume_payload), config=config)
@@ -187,7 +205,15 @@ class WorkflowRuntime:
         stage = self._current_stage_from_snapshot(snapshot)
         if stage == "waiting_confirmation":
             return "waiting"
-        if stage in {"validated", "metrics_calculated", "report_generated", "report_rendered"}:
+        if stage == "waiting_publish_approval":
+            return "waiting"
+        if stage in {
+            "validated",
+            "metrics_calculated",
+            "report_generated",
+            "report_rendered",
+            "publish_approved",
+        }:
             return "completed"
         if stage == "blocked":
             return "blocked"
@@ -221,6 +247,14 @@ class WorkflowRuntime:
             return "generation_confirmation_waiting"
         if stage == "validated":
             return "generation_confirmation_approved"
+        if stage == "building_publish_plan":
+            return "publish_plan_building"
+        if stage == "requesting_publish_confirmation":
+            return "publish_confirmation_requesting"
+        if stage == "waiting_publish_approval":
+            return "publish_confirmation_waiting"
+        if stage == "publish_approved":
+            return "publish_confirmation_approved"
         if stage == "metrics_calculated":
             return "metrics_calculated"
         if stage == "report_generated":
@@ -241,13 +275,10 @@ class WorkflowRuntime:
             return "generation_confirmation_cancelled"
         return "workflow_resumed"
 
-    def _load_pending_generation_approval(
-        self, session: Session, run_id: str
-    ) -> HumanApproval | None:
+    def _load_pending_approval(self, session: Session, run_id: str) -> HumanApproval | None:
         return session.scalar(
             select(HumanApproval).where(
                 HumanApproval.run_id == run_id,
-                HumanApproval.approval_type == "generation",
                 HumanApproval.status == "pending",
             )
         )

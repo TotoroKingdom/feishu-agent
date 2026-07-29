@@ -59,6 +59,9 @@ class ReportRun(Base):
     scope_revision: Mapped[int] = mapped_column(Integer, default=1)
     current_stage: Mapped[str] = mapped_column(String(40), default="created")
     current_node: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    approved_publish_plan_id: Mapped[str | None] = mapped_column(
+        ForeignKey("publish_plans.id"), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -321,6 +324,30 @@ class ReportVersion(Base):
     data_quality_status: Mapped[str] = mapped_column(String(24))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class PublishPlan(Base):
+    __tablename__ = "publish_plans"
+    __table_args__ = (
+        UniqueConstraint("run_id", "version", name="uq_publish_plans_version"),
+        UniqueConstraint("run_id", "plan_hash", name="uq_publish_plans_plan_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    report_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_versions.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(32), default="draft")
+    canonical_plan: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    plan_hash: Mapped[str] = mapped_column(String(64))
+    content_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ReportClaim(Base):

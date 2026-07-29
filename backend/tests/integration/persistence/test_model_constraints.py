@@ -15,6 +15,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "metric_snapshots",
         "normalized_entities",
         "normalized_snapshots",
+        "publish_plans",
         "projects",
         "project_repositories",
         "report_claims",
@@ -61,6 +62,14 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_metric_snapshots"
         for constraint in inspector.get_unique_constraints("metric_snapshots")
+    )
+    assert any(
+        constraint["name"] == "uq_publish_plans_version"
+        for constraint in inspector.get_unique_constraints("publish_plans")
+    )
+    assert any(
+        constraint["name"] == "uq_publish_plans_plan_hash"
+        for constraint in inspector.get_unique_constraints("publish_plans")
     )
     assert any(
         constraint["name"] == "uq_tool_executions_attempt"

@@ -15,6 +15,7 @@ def test_report_tables_and_constraints_exist() -> None:
         "metric_snapshots",
         "normalized_entities",
         "normalized_snapshots",
+        "publish_plans",
         "projects",
         "project_repositories",
         "report_claims",
@@ -53,4 +54,12 @@ def test_report_tables_and_constraints_exist() -> None:
     assert any(
         constraint["name"] == "uq_report_evidence"
         for constraint in inspector.get_unique_constraints("report_evidence")
+    )
+    assert any(
+        constraint["name"] == "uq_publish_plans_version"
+        for constraint in inspector.get_unique_constraints("publish_plans")
+    )
+    assert any(
+        constraint["name"] == "uq_publish_plans_plan_hash"
+        for constraint in inspector.get_unique_constraints("publish_plans")
     )

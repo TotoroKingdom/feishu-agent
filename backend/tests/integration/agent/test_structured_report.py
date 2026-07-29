@@ -61,17 +61,33 @@ def _approval_payload(snapshot: object, action: str) -> dict[str, object]:
     }
 
 
+def _publish_payload(snapshot: object, action: str) -> dict[str, object]:
+    values = snapshot.values  # type: ignore[attr-defined]
+    approval = values["approval"]
+    publish = values["publish"]
+    return {
+        "action": action,
+        "challenge_id": approval["challenge_id"],
+        "approval_revision": approval["approval_revision"],
+        "presented_hash": publish["plan_hash"],
+        "actor_id": "local-demo",
+    }
+
+
 def test_structured_report_and_evidence_chain_are_persisted() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    first_resume = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
-    duplicate_resume = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    first_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    duplicate_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
 
     assert started.status == "waiting"
+    assert waiting_publish.status == "waiting"
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
+    assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
     assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["evidence_set_ref"]  # type: ignore[index]
@@ -105,14 +121,14 @@ def test_structured_report_and_evidence_chain_are_persisted() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_rendered"
+        assert run_row.current_stage == "publish_approved"
         assert metric_row is not None
         assert len(evidence_sets) == 1
         assert len(evidence_items) == 4
         assert len(report_versions) == 1
         assert len(report_claims) == 4
         assert len(report_evidence) == 10
-        assert len(tool_executions) == 9
+        assert len(tool_executions) == 10
 
         report_version = report_versions[0]
         assert report_version.status == "verified"

@@ -41,11 +41,13 @@ class WorkflowState(TypedDict, total=False):
     evidence_set_ref: str | None
     report_version_ref: str | None
     rendered_report_ref: str | None
+    publish_plan_ref: str | None
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
     approval_revision: int
     approval: dict[str, object]
+    publish: dict[str, object]
     control: dict[str, object]
     error: dict[str, object]
     requested_action: Literal[
@@ -55,6 +57,10 @@ class WorkflowState(TypedDict, total=False):
         "reject_generation",
         "continue",
         "cancel",
+        "approve_publish",
+        "regenerate_report",
+        "update_supplement",
+        "cancel_publish",
     ]
     resume_from: str
     cancel_requested: bool
@@ -87,8 +93,24 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "evidence_set_ref": None,
         "report_version_ref": None,
         "rendered_report_ref": None,
+        "publish_plan_ref": None,
         "scope": {},
-        "approval": {},
+        "approval": {
+            "active_approval_ref": None,
+            "approval_type": None,
+            "approval_revision": 0,
+            "status": "none",
+            "approved_scope_hash": None,
+            "approved_plan_hash": None,
+            "challenge_id": None,
+            "requested_from": [],
+        },
+        "publish": {
+            "plan_hash": None,
+            "operation_refs": [],
+            "next_operation_index": 0,
+            "side_effect_status": "not_started",
+        },
         "control": {
             "requested_action": None,
             "resume_from": "load_project_config",

@@ -69,16 +69,32 @@ def _approval_payload(snapshot: object, action: str) -> dict[str, object]:
     }
 
 
+def _publish_payload(snapshot: object, action: str) -> dict[str, object]:
+    values = snapshot.values  # type: ignore[attr-defined]
+    approval = values["approval"]
+    publish = values["publish"]
+    return {
+        "action": action,
+        "challenge_id": approval["challenge_id"],
+        "approval_revision": approval["approval_revision"],
+        "presented_hash": publish["plan_hash"],
+        "actor_id": "local-demo",
+    }
+
+
 def test_happy_path_collects_normalizes_and_validates() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    result = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    result = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
     snapshot = result.snapshot
 
     assert started.status == "waiting"
+    assert waiting_publish.status == "waiting"
     assert result.status == "completed"
-    assert snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
+    assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
+    assert snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
     assert snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert isinstance(snapshot.values["source_batch_refs"], list)
     assert len(snapshot.values["source_batch_refs"]) == 2
@@ -109,7 +125,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_rendered"
+        assert run_row.current_stage == "publish_approved"
         assert len(source_batches) == 2
         assert {batch.fetch_status for batch in source_batches} == {"complete"}
         assert len(normalized_snapshots) == 1
@@ -119,7 +135,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
         assert validation_results[0].validation_pass is True
         assert validation_results[0].data_quality_status == "complete"
         assert len(metric_snapshots) == 1
-        assert len(tool_executions) == 9
+        assert len(tool_executions) == 10
 
 
 def test_failed_source_batch_blocks_the_run() -> None:

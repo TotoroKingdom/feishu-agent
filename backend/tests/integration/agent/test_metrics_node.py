@@ -49,17 +49,33 @@ def _approval_payload(snapshot: object, action: str) -> dict[str, object]:
     }
 
 
+def _publish_payload(snapshot: object, action: str) -> dict[str, object]:
+    values = snapshot.values  # type: ignore[attr-defined]
+    approval = values["approval"]
+    publish = values["publish"]
+    return {
+        "action": action,
+        "challenge_id": approval["challenge_id"],
+        "approval_revision": approval["approval_revision"],
+        "presented_hash": publish["plan_hash"],
+        "actor_id": "local-demo",
+    }
+
+
 def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    first_resume = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
-    duplicate_resume = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    first_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    duplicate_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
 
     assert started.status == "waiting"
+    assert waiting_publish.status == "waiting"
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
+    assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"] == duplicate_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
@@ -75,7 +91,7 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_rendered"
+        assert run_row.current_stage == "publish_approved"
         assert len(metric_snapshots) == 1
         assert metric_snapshots[0].definition_version == "minimal.v1"
-        assert len(tool_executions) == 9
+        assert len(tool_executions) == 10
