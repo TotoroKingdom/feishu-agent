@@ -2,7 +2,9 @@
   "name": "feishu-project-weekly-agent-frontend",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
+    "test": "node scripts/test.mjs",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "build": "next build"

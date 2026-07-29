@@ -10,6 +10,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings
+from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
 from app.db.models import Project
 from app.domain.runs import RunCreationService
 from app.observability.context import request_id_context
@@ -114,7 +115,25 @@ def create_app(
                 status=run.status,
             )
 
+    @application.get("/api/v1/admin/runs/{run_id}")
+    def get_admin_run_detail(run_id: str) -> JSONResponse:
+        factory = _session_factory(application)
+        request_id = request_id_context.get()
+        try:
+            envelope = RunDetailService(factory).load(run_id, request_id=request_id)
+        except RunDetailNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return JSONResponse(content=envelope.model_dump(mode="json"))
+
     return application
 
 
 app = create_app()
+
+
+def _session_factory(application: FastAPI) -> SessionFactory:
+    factory = application.state.session_factory
+    if factory is not None:
+        return factory
+    engine = create_engine(application.state.settings.database_url)
+    return sessionmaker(engine, class_=Session, expire_on_commit=False)
