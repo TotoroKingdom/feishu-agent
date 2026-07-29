@@ -61,7 +61,7 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
     assert started.status == "waiting"
     assert started.snapshot.values["current_stage"] == "waiting_confirmation"  # type: ignore[index]
     assert first_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "report_generated"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
     assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert duplicate_resume.status == "completed"
@@ -75,7 +75,7 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_generated"
+        assert run_row.current_stage == "report_rendered"
         assert run_row.scope_revision == 1
         assert len(approvals) == 1
         assert approvals[0].status == "approved"

@@ -187,7 +187,7 @@ class WorkflowRuntime:
         stage = self._current_stage_from_snapshot(snapshot)
         if stage == "waiting_confirmation":
             return "waiting"
-        if stage in {"validated", "metrics_calculated", "report_generated"}:
+        if stage in {"validated", "metrics_calculated", "report_generated", "report_rendered"}:
             return "completed"
         if stage == "blocked":
             return "blocked"
@@ -225,8 +225,12 @@ class WorkflowRuntime:
             return "metrics_calculated"
         if stage == "report_generated":
             return "report_generated"
+        if stage == "report_rendered":
+            return "report_rendered"
         if stage in {"building_evidence", "generating_structured_report"}:
             return "report_generating"
+        if stage in {"verifying_grounding", "rendering_report"}:
+            return "report_grounding"
         if stage == "calculating_metrics":
             return "metrics_calculating"
         if stage == "blocked":

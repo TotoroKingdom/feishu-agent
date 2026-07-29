@@ -63,7 +63,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert snapshot.values["current_stage"] == "waiting_confirmation"
     assert resumed.status == "completed"
     assert completed is not None
-    assert completed.values["current_stage"] == "report_generated"
+    assert completed.values["current_stage"] == "report_rendered"
     assert completed.values["current_node"] == "complete_run"
     assert isinstance(completed.values["source_batch_refs"], list)
     assert len(completed.values["source_batch_refs"]) == 2
@@ -74,6 +74,8 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert completed.values["validation_result_ref"]
     assert isinstance(completed.values["metrics_ref"], str)
     assert completed.values["metrics_ref"]
+    assert isinstance(completed.values["rendered_report_ref"], str)
+    assert completed.values["rendered_report_ref"]
 
     with factory() as session:
         row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -81,7 +83,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
         assert row.status == "completed"
-        assert row.current_stage == "report_generated"
+        assert row.current_stage == "report_rendered"
         assert row.scope_revision == 1
         assert metric_row is not None
 

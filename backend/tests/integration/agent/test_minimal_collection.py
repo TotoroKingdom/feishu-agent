@@ -78,7 +78,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
 
     assert started.status == "waiting"
     assert result.status == "completed"
-    assert snapshot.values["current_stage"] == "report_generated"  # type: ignore[index]
+    assert snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
     assert snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert isinstance(snapshot.values["source_batch_refs"], list)
     assert len(snapshot.values["source_batch_refs"]) == 2
@@ -109,7 +109,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_generated"
+        assert run_row.current_stage == "report_rendered"
         assert len(source_batches) == 2
         assert {batch.fetch_status for batch in source_batches} == {"complete"}
         assert len(normalized_snapshots) == 1
@@ -119,7 +119,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
         assert validation_results[0].validation_pass is True
         assert validation_results[0].data_quality_status == "complete"
         assert len(metric_snapshots) == 1
-        assert len(tool_executions) == 7
+        assert len(tool_executions) == 9
 
 
 def test_failed_source_batch_blocks_the_run() -> None:

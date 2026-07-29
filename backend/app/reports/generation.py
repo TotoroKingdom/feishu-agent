@@ -139,6 +139,13 @@ def build_claim_evidence_map(claims: Sequence[Mapping[str, object]]) -> dict[str
     return mapping
 
 
+def build_claim_specs(
+    evidence_items: Sequence[Mapping[str, object]],
+    metric_values: Mapping[str, int],
+) -> list[dict[str, object]]:
+    return _build_claim_specs(evidence_items, metric_values)
+
+
 def build_evidence_set_content_hash(
     *,
     normalized_snapshot_id: str,

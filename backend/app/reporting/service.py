@@ -27,12 +27,15 @@ from app.domain.source import SOURCE_TYPE_FEISHU_BITABLE, SOURCE_TYPE_GITHUB, ca
 from app.reports.generation import (
     REPORT_GENERATION_VERSION,
     REPORT_STATUS_DRAFT,
+    build_claim_specs,
     build_evidence_item_content_hash,
     build_evidence_set_content_hash,
     build_structured_report_hash,
     build_structured_report_payload,
     validate_structured_report_payload,
 )
+from app.reports.grounding import GROUNDING_VERSION, GroundingVerificationResult, verify_structured_report_grounding
+from app.reports.rendering import RENDERING_VERSION, render_verified_report
 from app.reports.metrics import extract_metric_values
 
 SessionFactory = Callable[[], Session]
@@ -45,6 +48,7 @@ class ReportStageOutcome:
     error_summary: str | None = None
     evidence_set_ref: str | None = None
     report_version_ref: str | None = None
+    rendered_report_ref: str | None = None
 
 
 class ReportingService:
@@ -223,7 +227,7 @@ class ReportingService:
             existing = session.scalar(
                 select(ReportVersion).where(
                     ReportVersion.run_id == run_id,
-                    ReportVersion.content_hash == content_hash,
+                    ReportVersion.structured_hash == structured_hash,
                 )
             )
             if existing is None:
@@ -307,6 +311,279 @@ class ReportingService:
             )
             session.commit()
             return ReportStageOutcome(status="complete", report_version_ref=report_version.id)
+
+    def verify_grounding(self, run_id: str, report_version_id: str) -> ReportStageOutcome:
+        with self._session_factory() as session:
+            run = self._load_run(session, run_id)
+            report_version = session.get(ReportVersion, report_version_id)
+            if report_version is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_VERSION_MISSING",
+                    error_summary="Report version not found",
+                )
+            if report_version.run_id != run_id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_VERSION_MISMATCH",
+                    error_summary="Report version does not belong to the current run",
+                    report_version_ref=report_version.id,
+                )
+
+            structured_report = report_version.structured_report
+            if not isinstance(structured_report, Mapping):
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="STRUCTURED_REPORT_MISSING",
+                    error_summary="Structured report payload missing",
+                )
+            evidence_set_id = _maybe_string(structured_report.get("evidence_set_ref"))
+            if evidence_set_id is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISSING",
+                    error_summary="Structured report missing evidence set reference",
+                )
+            evidence_set = session.get(EvidenceSet, evidence_set_id)
+            if evidence_set is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISSING",
+                    error_summary="Evidence set not found",
+                )
+            if evidence_set.run_id != run_id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISMATCH",
+                    error_summary="Evidence set does not belong to the current run",
+                    report_version_ref=report_version.id,
+                )
+
+            metric_snapshot = session.get(MetricSnapshot, evidence_set.metric_snapshot_id)
+            normalized_snapshot = session.get(NormalizedSnapshot, evidence_set.normalized_snapshot_id)
+            if metric_snapshot is None or normalized_snapshot is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="SNAPSHOT_MISSING",
+                    error_summary="Metric or normalized snapshot missing",
+                )
+            expected_metric_values = extract_metric_values(metric_snapshot.metrics)
+            structured_metric_values = _structured_report_metrics(structured_report.get("metrics"))
+            if structured_metric_values != expected_metric_values:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="METRIC_MISMATCH",
+                    error_summary="Structured report metrics do not match metric snapshot",
+                    report_version_ref=report_version.id,
+                )
+            if _maybe_string(structured_report.get("metric_snapshot_ref")) != metric_snapshot.id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="METRIC_SNAPSHOT_REF_MISMATCH",
+                    error_summary="Structured report metric snapshot reference does not match",
+                    report_version_ref=report_version.id,
+                )
+            if _maybe_string(structured_report.get("evidence_set_ref")) != evidence_set.id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_REF_MISMATCH",
+                    error_summary="Structured report evidence set reference does not match",
+                    report_version_ref=report_version.id,
+                )
+            expected_data_snapshot_hash = canonical_json_hash(
+                {
+                    "metric_snapshot_content_hash": metric_snapshot.content_hash,
+                    "evidence_set_content_hash": evidence_set.content_hash,
+                }
+            )
+            if _maybe_string(structured_report.get("data_snapshot_hash")) != expected_data_snapshot_hash:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="DATA_SNAPSHOT_HASH_MISMATCH",
+                    error_summary="Structured report data snapshot hash does not match",
+                    report_version_ref=report_version.id,
+                )
+
+            evidence_items = session.scalars(
+                select(EvidenceItem)
+                .where(EvidenceItem.evidence_set_id == evidence_set.id)
+                .order_by(EvidenceItem.evidence_key)
+            ).all()
+            evidence_payloads = [_evidence_item_to_payload(item) for item in evidence_items]
+            verification = verify_structured_report_grounding(
+                structured_report,
+                evidence_items=evidence_payloads,
+                period_start=run.period_start,
+                period_end=run.period_end,
+            )
+            claims = session.scalars(
+                select(ReportClaim).where(ReportClaim.report_version_id == report_version.id)
+            ).all()
+            if verification.status == "blocked":
+                for claim in claims:
+                    claim.grounding_status = "rejected"
+                report_version.status = "rejected"
+                report_version.model_info = {
+                    **dict(report_version.model_info or {}),
+                    "grounding_version": GROUNDING_VERSION,
+                }
+                self._record_tool_execution(
+                    session,
+                    run_id=run_id,
+                    node_execution_id="verify_grounding",
+                    tool_name="reports.verify_grounding",
+                    request_summary={"report_version_id": report_version_id},
+                    result_summary={
+                        "status": "blocked",
+                        "error_code": verification.error_code,
+                        "grounded_claim_count": verification.grounded_claim_count,
+                    },
+                    data_ref=report_version.id,
+                    status="success",
+                    retryable=False,
+                )
+                session.commit()
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code=verification.error_code,
+                    error_summary=verification.error_summary,
+                    report_version_ref=report_version.id,
+                )
+
+            for claim in claims:
+                claim.grounding_status = "verified"
+            report_version.status = "verified"
+            report_version.verified_at = report_version.verified_at or datetime.now(timezone.utc)
+            report_version.model_info = {
+                **dict(report_version.model_info or {}),
+                "grounding_version": GROUNDING_VERSION,
+            }
+            self._record_tool_execution(
+                session,
+                run_id=run_id,
+                node_execution_id="verify_grounding",
+                tool_name="reports.verify_grounding",
+                request_summary={"report_version_id": report_version_id},
+                result_summary={
+                    "status": "pass",
+                    "grounded_claim_count": verification.grounded_claim_count,
+                },
+                data_ref=report_version.id,
+                status="success",
+                retryable=False,
+            )
+            session.commit()
+            return ReportStageOutcome(status="complete", report_version_ref=report_version.id)
+
+    def render_report(self, run_id: str, report_version_id: str) -> ReportStageOutcome:
+        with self._session_factory() as session:
+            run = self._load_run(session, run_id)
+            report_version = session.get(ReportVersion, report_version_id)
+            if report_version is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_VERSION_MISSING",
+                    error_summary="Report version not found",
+                )
+            if report_version.run_id != run_id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_VERSION_MISMATCH",
+                    error_summary="Report version does not belong to the current run",
+                    report_version_ref=report_version.id,
+                )
+            if report_version.status != "verified":
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_NOT_VERIFIED",
+                    error_summary="Report version must be verified before rendering",
+                    report_version_ref=report_version.id,
+                )
+            if not isinstance(report_version.structured_report, Mapping):
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="STRUCTURED_REPORT_MISSING",
+                    error_summary="Structured report payload missing",
+                    report_version_ref=report_version.id,
+                )
+
+            evidence_set_id = _maybe_string(report_version.structured_report.get("evidence_set_ref"))
+            if evidence_set_id is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISSING",
+                    error_summary="Structured report missing evidence set reference",
+                    report_version_ref=report_version.id,
+                )
+            evidence_set = session.get(EvidenceSet, evidence_set_id)
+            if evidence_set is None:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISSING",
+                    error_summary="Evidence set not found",
+                    report_version_ref=report_version.id,
+                )
+            if evidence_set.run_id != run_id:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_SET_MISMATCH",
+                    error_summary="Evidence set does not belong to the current run",
+                    report_version_ref=report_version.id,
+                )
+
+            evidence_items = session.scalars(
+                select(EvidenceItem)
+                .where(EvidenceItem.evidence_set_id == evidence_set.id)
+                .order_by(EvidenceItem.evidence_key)
+            ).all()
+            if not evidence_items:
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="EVIDENCE_ITEMS_MISSING",
+                    error_summary="Evidence items not found",
+                    report_version_ref=report_version.id,
+                )
+            if any(claim.grounding_status != "verified" for claim in session.scalars(
+                select(ReportClaim).where(ReportClaim.report_version_id == report_version.id)
+            ).all()):
+                return ReportStageOutcome(
+                    status="blocked",
+                    error_code="REPORT_NOT_GROUNDED",
+                    error_summary="Report version must be grounded before rendering",
+                    report_version_ref=report_version.id,
+                )
+
+            rendered = render_verified_report(
+                report_version.structured_report,
+                evidence_items=[_evidence_item_to_payload(item) for item in evidence_items],
+            )
+            report_version.rendered_content = rendered.rendered_content
+            report_version.content_hash = rendered.rendered_content_hash
+            report_version.model_info = {
+                **dict(report_version.model_info or {}),
+                "grounding_version": GROUNDING_VERSION,
+                "rendering_version": RENDERING_VERSION,
+            }
+            self._record_tool_execution(
+                session,
+                run_id=run_id,
+                node_execution_id="render_report",
+                tool_name="reports.render_report",
+                request_summary={"report_version_id": report_version_id},
+                result_summary={
+                    "content_hash": rendered.rendered_content_hash,
+                    "line_count": rendered.line_count,
+                },
+                data_ref=report_version.id,
+                status="success",
+                retryable=False,
+            )
+            session.commit()
+            return ReportStageOutcome(
+                status="complete",
+                report_version_ref=report_version.id,
+                rendered_report_ref=report_version.id,
+            )
 
     def _load_run(self, session: Session, run_id: str) -> ReportRun:
         run = session.get(ReportRun, run_id)
@@ -430,6 +707,16 @@ def _evidence_item_to_payload(item: EvidenceItem) -> dict[str, object]:
         "state": None,
         "is_overdue": False,
     }
+
+
+def _structured_report_metrics(value: object) -> dict[str, int]:
+    if not isinstance(value, Mapping):
+        return {}
+    metrics: dict[str, int] = {}
+    for key, metric_value in value.items():
+        if isinstance(metric_value, int):
+            metrics[str(key)] = metric_value
+    return metrics
 
 
 def _is_overdue_entity(entity: NormalizedEntity, period_end: datetime) -> bool:

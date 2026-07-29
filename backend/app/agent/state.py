@@ -40,6 +40,7 @@ class WorkflowState(TypedDict, total=False):
     metrics_ref: str | None
     evidence_set_ref: str | None
     report_version_ref: str | None
+    rendered_report_ref: str | None
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
@@ -85,6 +86,7 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "metrics_ref": None,
         "evidence_set_ref": None,
         "report_version_ref": None,
+        "rendered_report_ref": None,
         "scope": {},
         "approval": {},
         "control": {

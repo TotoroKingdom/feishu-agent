@@ -46,6 +46,8 @@ def build_workflow_graph(
     builder.add_node("calculate_metrics", _calculate_metrics(metrics))
     builder.add_node("build_evidence", _build_evidence(reporter))
     builder.add_node("generate_structured_report", _generate_structured_report(reporter))
+    builder.add_node("verify_grounding", _verify_grounding(reporter))
+    builder.add_node("render_report", _render_report(reporter))
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -107,7 +109,23 @@ def build_workflow_graph(
             END: END,
         },
     )
-    builder.add_edge("generate_structured_report", END)
+    builder.add_conditional_edges(
+        "generate_structured_report",
+        _collection_route,
+        {
+            "verify_grounding": "verify_grounding",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "verify_grounding",
+        _collection_route,
+        {
+            "render_report": "render_report",
+            END: END,
+        },
+    )
+    builder.add_edge("render_report", END)
     return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
@@ -493,13 +511,77 @@ def _generate_structured_report(reporter: ReportingService):
             return {
                 "current_stage": "blocked",
                 "current_node": "generate_structured_report",
+                "report_version_ref": outcome.report_version_ref,
                 "error_code": outcome.error_code,
                 "error_summary": outcome.error_summary,
             }
         return {
-            "current_stage": "report_generated",
+            "current_stage": "verifying_grounding",
+            "current_node": "verify_grounding",
+            "report_version_ref": outcome.report_version_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _verify_grounding(reporter: ReportingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        report_version_ref = state.get("report_version_ref")
+        if not isinstance(report_version_ref, str) or not report_version_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "verify_grounding",
+                "error_code": "REPORT_VERSION_MISSING",
+                "error_summary": "Report version missing from state",
+            }
+        outcome = reporter.verify_grounding(state["run_id"], report_version_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "verify_grounding",
+                "report_version_ref": outcome.report_version_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "rendering_report",
+            "current_node": "render_report",
+            "report_version_ref": outcome.report_version_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _render_report(reporter: ReportingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        report_version_ref = state.get("report_version_ref")
+        if not isinstance(report_version_ref, str) or not report_version_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "render_report",
+                "error_code": "REPORT_VERSION_MISSING",
+                "error_summary": "Report version missing from state",
+            }
+        outcome = reporter.render_report(state["run_id"], report_version_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "render_report",
+                "report_version_ref": outcome.report_version_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "report_rendered",
             "current_node": "complete_run",
             "report_version_ref": outcome.report_version_ref,
+            "rendered_report_ref": outcome.rendered_report_ref,
             "error_code": None,
             "error_summary": None,
         }
@@ -529,6 +611,8 @@ def _collection_route(state: WorkflowState) -> str:
         "calculate_metrics",
         "build_evidence",
         "generate_structured_report",
+        "verify_grounding",
+        "render_report",
     }:
         return str(current_node)
     return END
@@ -697,4 +781,10 @@ class _MissingReportingService:
         raise RuntimeError("reporting_service is required")
 
     def generate_structured_report(self, *_: object, **__: object) -> ReportStageOutcome:
+        raise RuntimeError("reporting_service is required")
+
+    def verify_grounding(self, *_: object, **__: object) -> ReportStageOutcome:
+        raise RuntimeError("reporting_service is required")
+
+    def render_report(self, *_: object, **__: object) -> ReportStageOutcome:
         raise RuntimeError("reporting_service is required")

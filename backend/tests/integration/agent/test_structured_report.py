@@ -71,12 +71,14 @@ def test_structured_report_and_evidence_chain_are_persisted() -> None:
     assert started.status == "waiting"
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "report_generated"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
     assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["evidence_set_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
+    assert first_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
+    assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -103,20 +105,22 @@ def test_structured_report_and_evidence_chain_are_persisted() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_generated"
+        assert run_row.current_stage == "report_rendered"
         assert metric_row is not None
         assert len(evidence_sets) == 1
         assert len(evidence_items) == 4
         assert len(report_versions) == 1
         assert len(report_claims) == 4
         assert len(report_evidence) == 10
-        assert len(tool_executions) == 7
+        assert len(tool_executions) == 9
 
         report_version = report_versions[0]
-        assert report_version.status == "draft"
-        assert report_version.rendered_content is None
+        assert report_version.status == "verified"
+        assert report_version.rendered_content is not None
         assert report_version.data_quality_status == "complete"
         assert report_version.structured_hash == report_version.structured_report["structured_hash"]
         assert report_version.structured_report["metrics"] == extract_metric_values(metric_row.metrics)
         assert report_version.structured_report["evidence_set_ref"] == evidence_sets[0].id
         assert report_version.structured_report["metric_snapshot_ref"] == metric_row.id
+        assert report_version.rendered_content
+        assert report_version.content_hash != report_version.structured_hash

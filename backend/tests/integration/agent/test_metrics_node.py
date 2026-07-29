@@ -59,9 +59,10 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
     assert started.status == "waiting"
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "report_generated"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "report_rendered"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"] == duplicate_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
+    assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -74,7 +75,7 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "report_generated"
+        assert run_row.current_stage == "report_rendered"
         assert len(metric_snapshots) == 1
         assert metric_snapshots[0].definition_version == "minimal.v1"
-        assert len(tool_executions) == 7
+        assert len(tool_executions) == 9
