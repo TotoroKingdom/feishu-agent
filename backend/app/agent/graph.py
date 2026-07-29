@@ -20,6 +20,7 @@ from app.approvals import (
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
 from app.metrics.service import MetricStageOutcome, MetricsService
+from app.reporting.service import ReportStageOutcome, ReportingService
 
 
 def build_workflow_graph(
@@ -27,10 +28,12 @@ def build_workflow_graph(
     approval_store: GenerationApprovalStore | None = None,
     collection_service: CollectionService | None = None,
     metrics_service: MetricsService | None = None,
+    reporting_service: ReportingService | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
     collector = collection_service or _MissingCollectionService()
     metrics = metrics_service or _MissingMetricsService()
+    reporter = reporting_service or _MissingReportingService()
     builder = StateGraph(WorkflowState)
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
@@ -41,6 +44,8 @@ def build_workflow_graph(
     builder.add_node("normalize_data", _normalize_data(collector))
     builder.add_node("validate_data", _validate_data(collector))
     builder.add_node("calculate_metrics", _calculate_metrics(metrics))
+    builder.add_node("build_evidence", _build_evidence(reporter))
+    builder.add_node("generate_structured_report", _generate_structured_report(reporter))
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -86,7 +91,23 @@ def build_workflow_graph(
             END: END,
         },
     )
-    builder.add_edge("calculate_metrics", END)
+    builder.add_conditional_edges(
+        "calculate_metrics",
+        _collection_route,
+        {
+            "build_evidence": "build_evidence",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "build_evidence",
+        _collection_route,
+        {
+            "generate_structured_report": "generate_structured_report",
+            END: END,
+        },
+    )
+    builder.add_edge("generate_structured_report", END)
     return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
@@ -415,9 +436,70 @@ def _calculate_metrics(metrics_service: MetricsService):
                 "error_summary": outcome.error_summary,
             }
         return {
-            "current_stage": "metrics_calculated",
-            "current_node": "complete_run",
+            "current_stage": "building_evidence",
+            "current_node": "build_evidence",
             "metrics_ref": outcome.metrics_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _build_evidence(reporter: ReportingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        metrics_ref = state.get("metrics_ref")
+        if not isinstance(metrics_ref, str) or not metrics_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "build_evidence",
+                "error_code": "METRICS_SNAPSHOT_MISSING",
+                "error_summary": "Metric snapshot missing from state",
+            }
+        outcome = reporter.build_evidence(state["run_id"], metrics_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "build_evidence",
+                "evidence_set_ref": outcome.evidence_set_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "generating_structured_report",
+            "current_node": "generate_structured_report",
+            "evidence_set_ref": outcome.evidence_set_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _generate_structured_report(reporter: ReportingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        evidence_set_ref = state.get("evidence_set_ref")
+        if not isinstance(evidence_set_ref, str) or not evidence_set_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "generate_structured_report",
+                "error_code": "EVIDENCE_SET_MISSING",
+                "error_summary": "Evidence set missing from state",
+            }
+        outcome = reporter.generate_structured_report(state["run_id"], evidence_set_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "generate_structured_report",
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "report_generated",
+            "current_node": "complete_run",
+            "report_version_ref": outcome.report_version_ref,
             "error_code": None,
             "error_summary": None,
         }
@@ -440,7 +522,14 @@ def _collection_route(state: WorkflowState) -> str:
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
-    if current_node in {"collect_github_data", "normalize_data", "validate_data", "calculate_metrics"}:
+    if current_node in {
+        "collect_github_data",
+        "normalize_data",
+        "validate_data",
+        "calculate_metrics",
+        "build_evidence",
+        "generate_structured_report",
+    }:
         return str(current_node)
     return END
 
@@ -601,3 +690,11 @@ class _MissingCollectionService:
 class _MissingMetricsService:
     def calculate_metrics(self, *_: object, **__: object) -> MetricStageOutcome:
         raise RuntimeError("metrics_service is required")
+
+
+class _MissingReportingService:
+    def build_evidence(self, *_: object, **__: object) -> ReportStageOutcome:
+        raise RuntimeError("reporting_service is required")
+
+    def generate_structured_report(self, *_: object, **__: object) -> ReportStageOutcome:
+        raise RuntimeError("reporting_service is required")

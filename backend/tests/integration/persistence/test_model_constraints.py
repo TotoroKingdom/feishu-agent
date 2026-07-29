@@ -8,6 +8,8 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) == {
+        "evidence_items",
+        "evidence_sets",
         "feishu_resources",
         "human_approvals",
         "metric_snapshots",
@@ -15,7 +17,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "normalized_snapshots",
         "projects",
         "project_repositories",
+        "report_claims",
+        "report_evidence",
         "report_runs",
+        "report_versions",
         "run_status_history",
         "source_data_batches",
         "tool_executions",

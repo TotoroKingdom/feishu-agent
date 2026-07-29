@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, JSON, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -249,6 +249,116 @@ class MetricSnapshot(Base):
     period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     metrics: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EvidenceSet(Base):
+    __tablename__ = "evidence_sets"
+    __table_args__ = (UniqueConstraint("run_id", "content_hash", name="uq_evidence_sets"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    normalized_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("normalized_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    metric_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("metric_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    builder_version: Mapped[str] = mapped_column(String(32))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EvidenceItem(Base):
+    __tablename__ = "evidence_items"
+    __table_args__ = (
+        UniqueConstraint("evidence_set_id", "evidence_key", name="uq_evidence_items"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    evidence_set_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_sets.id", ondelete="CASCADE"), index=True
+    )
+    evidence_key: Mapped[str] = mapped_column(String(128))
+    source_type: Mapped[str] = mapped_column(String(24))
+    source_resource_id: Mapped[str] = mapped_column(String(36))
+    external_id: Mapped[str] = mapped_column(String(128))
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    evidence_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float)
+    normalized_entity_id: Mapped[str | None] = mapped_column(
+        ForeignKey("normalized_entities.id", ondelete="CASCADE"), nullable=True
+    )
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportVersion(Base):
+    __tablename__ = "report_versions"
+    __table_args__ = (
+        UniqueConstraint("run_id", "version", name="uq_report_versions_version"),
+        UniqueConstraint("run_id", "content_hash", name="uq_report_versions_content_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    version: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24))
+    structured_report: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    structured_hash: Mapped[str] = mapped_column(String(64))
+    rendered_content: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    data_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    prompt_version_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    model_info: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    confidence: Mapped[float] = mapped_column(Float)
+    data_quality_status: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportClaim(Base):
+    __tablename__ = "report_claims"
+    __table_args__ = (
+        UniqueConstraint("report_version_id", "claim_key", name="uq_report_claims"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    report_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_versions.id", ondelete="CASCADE"), index=True
+    )
+    claim_key: Mapped[str] = mapped_column(String(128))
+    content: Mapped[str] = mapped_column(String(1024))
+    claim_type: Mapped[str] = mapped_column(String(24))
+    importance: Mapped[str] = mapped_column(String(24))
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    confidence: Mapped[float] = mapped_column(Float)
+    grounding_status: Mapped[str] = mapped_column(String(24))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ReportEvidence(Base):
+    __tablename__ = "report_evidence"
+    __table_args__ = (
+        UniqueConstraint("claim_id", "evidence_item_id", name="uq_report_evidence"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    claim_id: Mapped[str] = mapped_column(
+        ForeignKey("report_claims.id", ondelete="CASCADE"), index=True
+    )
+    evidence_item_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_items.id", ondelete="CASCADE"), index=True
+    )
+    citation_order: Mapped[int] = mapped_column(Integer)
+    relevance_score: Mapped[float] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

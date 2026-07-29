@@ -38,6 +38,8 @@ class WorkflowState(TypedDict, total=False):
     normalized_snapshot_ref: str | None
     validation_result_ref: str | None
     metrics_ref: str | None
+    evidence_set_ref: str | None
+    report_version_ref: str | None
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
@@ -81,6 +83,8 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "normalized_snapshot_ref": None,
         "validation_result_ref": None,
         "metrics_ref": None,
+        "evidence_set_ref": None,
+        "report_version_ref": None,
         "scope": {},
         "approval": {},
         "control": {

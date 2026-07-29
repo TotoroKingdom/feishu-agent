@@ -16,6 +16,7 @@ from app.agent.graph import build_workflow_graph
 from app.agent.state import build_initial_state, thread_id_for_run
 from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
 from app.metrics.service import MetricsService
+from app.reporting.service import ReportingService
 
 SessionFactory = Callable[[], Session]
 
@@ -36,17 +37,20 @@ class WorkflowRuntime:
         checkpointer: Any | None = None,
         collection_service: CollectionService | None = None,
         metrics_service: MetricsService | None = None,
+        reporting_service: ReportingService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._approval_store = GenerationApprovalStore(session_factory)
         self._collection_service = collection_service or CollectionService(session_factory)
         self._metrics_service = metrics_service or MetricsService(session_factory)
+        self._reporting_service = reporting_service or ReportingService(session_factory)
         self._checkpointer: Any = checkpointer or MemorySaver()
         self._graph = build_workflow_graph(
             self._checkpointer,
             self._approval_store,
             self._collection_service,
             self._metrics_service,
+            self._reporting_service,
         )
 
     def start(self, run_id: str) -> WorkflowExecutionResult:
@@ -183,7 +187,7 @@ class WorkflowRuntime:
         stage = self._current_stage_from_snapshot(snapshot)
         if stage == "waiting_confirmation":
             return "waiting"
-        if stage == "validated":
+        if stage in {"validated", "metrics_calculated", "report_generated"}:
             return "completed"
         if stage == "blocked":
             return "blocked"
@@ -219,6 +223,10 @@ class WorkflowRuntime:
             return "generation_confirmation_approved"
         if stage == "metrics_calculated":
             return "metrics_calculated"
+        if stage == "report_generated":
+            return "report_generated"
+        if stage in {"building_evidence", "generating_structured_report"}:
+            return "report_generating"
         if stage == "calculating_metrics":
             return "metrics_calculating"
         if stage == "blocked":
@@ -312,12 +320,14 @@ class WorkflowWorker:
         checkpointer: Any | None = None,
         collection_service: CollectionService | None = None,
         metrics_service: MetricsService | None = None,
+        reporting_service: ReportingService | None = None,
     ) -> None:
         self._runtime = WorkflowRuntime(
             session_factory,
             checkpointer,
             collection_service,
             metrics_service,
+            reporting_service,
         )
 
     def recover_waiting_runs(self) -> list[str]:
