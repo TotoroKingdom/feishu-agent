@@ -18,10 +18,13 @@ def test_report_tables_and_constraints_exist() -> None:
         "publish_plans",
         "projects",
         "project_repositories",
+        "report_artifacts",
         "report_claims",
         "report_evidence",
         "report_runs",
         "report_versions",
+        "side_effect_attempts",
+        "side_effect_operations",
         "run_status_history",
         "source_data_batches",
         "tool_executions",
@@ -62,4 +65,20 @@ def test_report_tables_and_constraints_exist() -> None:
     assert any(
         constraint["name"] == "uq_publish_plans_plan_hash"
         for constraint in inspector.get_unique_constraints("publish_plans")
+    )
+    assert any(
+        constraint["name"] == "uq_side_effect_operations_sequence"
+        for constraint in inspector.get_unique_constraints("side_effect_operations")
+    )
+    assert any(
+        constraint["name"] == "uq_side_effect_operations_idempotency_key"
+        for constraint in inspector.get_unique_constraints("side_effect_operations")
+    )
+    assert any(
+        constraint["name"] == "uq_side_effect_attempts"
+        for constraint in inspector.get_unique_constraints("side_effect_attempts")
+    )
+    assert any(
+        constraint["name"] == "uq_report_artifacts_operation"
+        for constraint in inspector.get_unique_constraints("report_artifacts")
     )

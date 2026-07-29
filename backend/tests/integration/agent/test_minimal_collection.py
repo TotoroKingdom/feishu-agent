@@ -94,7 +94,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
     assert waiting_publish.status == "waiting"
     assert result.status == "completed"
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
-    assert snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
+    assert snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert isinstance(snapshot.values["source_batch_refs"], list)
     assert len(snapshot.values["source_batch_refs"]) == 2
@@ -125,7 +125,7 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "publish_approved"
+        assert run_row.current_stage == "succeeded"
         assert len(source_batches) == 2
         assert {batch.fetch_status for batch in source_batches} == {"complete"}
         assert len(normalized_snapshots) == 1

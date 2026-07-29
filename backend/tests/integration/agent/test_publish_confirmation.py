@@ -8,7 +8,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent.runtime import WorkflowRuntime
-from app.db.models import Base, HumanApproval, Project, PublishPlan, ReportRun, ReportVersion, ToolExecution
+from app.db.models import (
+    Base,
+    HumanApproval,
+    Project,
+    PublishPlan,
+    ReportArtifact,
+    ReportRun,
+    ReportVersion,
+    SideEffectAttempt,
+    SideEffectOperation,
+    ToolExecution,
+)
 from app.domain.runs import RunCreationService
 
 
@@ -81,7 +92,7 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
 
     assert completed.status == "completed"
     assert duplicate.status == "completed"
-    assert completed.snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
+    assert completed.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert completed.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert completed.snapshot.values["publish_plan_ref"] == duplicate.snapshot.values["publish_plan_ref"]  # type: ignore[index]
 
@@ -92,11 +103,25 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
             select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.created_at)
         ).all()
         report_version = session.scalar(select(ReportVersion).where(ReportVersion.run_id == run_id))
+        operations = session.scalars(
+            select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(SideEffectOperation.sequence)
+        ).all()
+        attempts = session.scalars(
+            select(SideEffectAttempt).join(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(
+                SideEffectOperation.sequence, SideEffectAttempt.attempt
+            )
+        ).all()
+        artifacts = session.scalars(
+            select(ReportArtifact)
+            .join(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
+        ).all()
         tool_executions = session.scalars(select(ToolExecution).where(ToolExecution.run_id == run_id)).all()
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "publish_approved"
+        assert run_row.current_stage == "succeeded"
         assert publish_plan is not None
         assert publish_plan.status == "approved"
         assert run_row.approved_publish_plan_id == publish_plan.id
@@ -104,6 +129,18 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
         assert len(approvals) == 2
         assert [approval.approval_type for approval in approvals] == ["generation", "publish"]
         assert approvals[1].status == "approved"
+        assert len(operations) == 3
+        assert [operation.sequence for operation in operations] == [1, 2, 3]
+        assert [operation.status for operation in operations] == ["succeeded", "succeeded", "succeeded"]
+        assert len(attempts) == 3
+        assert [attempt.status for attempt in attempts] == ["succeeded", "succeeded", "succeeded"]
+        assert len(artifacts) == 3
+        assert [artifact.artifact_type for artifact in artifacts] == [
+            "feishu_document",
+            "group_message",
+            "bitable_archive",
+        ]
+        assert all(artifact.verified_at is not None for artifact in artifacts)
         assert len(tool_executions) == 10
 
 

@@ -18,6 +18,8 @@ from app.approvals import (
 )
 from app.db.models import HumanApproval, Project, PublishPlan, ReportRun, ReportVersion, ToolExecution, new_id
 from app.publishing.generation import build_publish_plan_hash, build_publish_plan_payload
+from app.side_effects.executor import SideEffectExecutionOutcome, SideEffectExecutor
+from app.providers.fake import FakeEffectProvider
 
 SessionFactory = Callable[[], Session]
 
@@ -50,8 +52,16 @@ class PublishResumeOutcome:
 
 
 class PublishingService:
-    def __init__(self, session_factory: SessionFactory) -> None:
+    def __init__(
+        self,
+        session_factory: SessionFactory,
+        effect_provider: FakeEffectProvider | None = None,
+    ) -> None:
         self._session_factory = session_factory
+        self._side_effects = SideEffectExecutor(
+            session_factory,
+            effect_provider=effect_provider,
+        )
 
     def build_publish_plan(self, run_id: str, report_version_id: str) -> PublishPlanOutcome:
         with self._session_factory() as session:
@@ -368,8 +378,8 @@ class PublishingService:
                     approval_ref=approval.id,
                     challenge_id=approval.challenge_id,
                     approval_revision=approval.revision,
-                    current_stage="publish_approved",
-                    current_node="complete_run",
+                    current_stage="publishing",
+                    current_node="create_feishu_document",
                 )
 
             if normalized_action in {
@@ -504,6 +514,58 @@ class PublishingService:
         session.add(new_approval)
         session.flush()
         return new_approval
+
+    def create_feishu_document(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        return self._side_effects.create_feishu_document(
+            run_id=run_id,
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+
+    def send_group_summary(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        return self._side_effects.send_group_summary(
+            run_id=run_id,
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+
+    def archive_report_record(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        return self._side_effects.archive_report_record(
+            run_id=run_id,
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+
+    def verify_side_effects(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        return self._side_effects.verify_side_effects(
+            run_id=run_id,
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
 
     def _load_run(self, session: Session, run_id: str) -> ReportRun:
         run = session.get(ReportRun, run_id)

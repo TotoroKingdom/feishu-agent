@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Integer, JSON, String, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -348,6 +348,89 @@ class PublishPlan(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     invalidated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SideEffectOperation(Base):
+    __tablename__ = "side_effect_operations"
+    __table_args__ = (
+        UniqueConstraint("publish_plan_id", "sequence", name="uq_side_effect_operations_sequence"),
+        UniqueConstraint("idempotency_key", name="uq_side_effect_operations_idempotency_key"),
+        Index("ix_side_effect_operations_run_status", "run_id", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    publish_plan_id: Mapped[str] = mapped_column(
+        ForeignKey("publish_plans.id", ondelete="CASCADE"), index=True
+    )
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    sequence: Mapped[int] = mapped_column(Integer)
+    operation_type: Mapped[str] = mapped_column(String(64))
+    target_ref: Mapped[str] = mapped_column(String(512))
+    target_hash: Mapped[str] = mapped_column(String(64))
+    payload_ref: Mapped[str] = mapped_column(String(512))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    external_resource_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    external_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    verification_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    last_error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    version: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class SideEffectAttempt(Base):
+    __tablename__ = "side_effect_attempts"
+    __table_args__ = (UniqueConstraint("operation_id", "attempt", name="uq_side_effect_attempts"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    operation_id: Mapped[str] = mapped_column(
+        ForeignKey("side_effect_operations.id", ondelete="CASCADE"), index=True
+    )
+    attempt: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24))
+    request_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    provider_request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    response_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ReportArtifact(Base):
+    __tablename__ = "report_artifacts"
+    __table_args__ = (
+        UniqueConstraint("operation_id", name="uq_report_artifacts_operation"),
+        Index("ix_report_artifacts_run_type", "run_id", "artifact_type"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    report_version_id: Mapped[str] = mapped_column(
+        ForeignKey("report_versions.id", ondelete="CASCADE"), index=True
+    )
+    artifact_type: Mapped[str] = mapped_column(String(32))
+    operation_id: Mapped[str] = mapped_column(
+        ForeignKey("side_effect_operations.id", ondelete="CASCADE"), index=True
+    )
+    external_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    target_ref: Mapped[str] = mapped_column(String(512))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ReportClaim(Base):

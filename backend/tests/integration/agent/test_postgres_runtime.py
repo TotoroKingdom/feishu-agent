@@ -88,7 +88,7 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
 
             snapshot = restarted_worker.inspect(run_id)
             assert snapshot is not None
-            assert snapshot.values["current_stage"] == "publish_approved"
+            assert snapshot.values["current_stage"] == "succeeded"
             assert snapshot.values["current_node"] == "complete_run"
             assert isinstance(snapshot.values["source_batch_refs"], list)
             assert len(snapshot.values["source_batch_refs"]) == 2
@@ -107,7 +107,7 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 assert run_row is not None
                 assert run_row.thread_id == thread_id
                 assert run_row.status == "completed"
-                assert run_row.current_stage == "publish_approved"
+                assert run_row.current_stage == "succeeded"
                 assert run_row.scope_revision == 1
                 assert [row.to_status for row in history_rows] == ["waiting", "waiting", "completed"]
                 assert metric_row is not None

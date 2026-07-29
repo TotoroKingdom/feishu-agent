@@ -86,7 +86,7 @@ def test_grounding_and_rendering_are_persisted() -> None:
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
-    assert first_resume.snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["evidence_set_ref"]  # type: ignore[index]
@@ -120,7 +120,7 @@ def test_grounding_and_rendering_are_persisted() -> None:
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "publish_approved"
+        assert run_row.current_stage == "succeeded"
         assert metric_row is not None
         assert len(evidence_sets) == 1
         assert len(evidence_items) == 4

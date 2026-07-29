@@ -118,8 +118,67 @@ class FakeEffectProvider:
         self.scenario = scenario
 
     def preview_publish(self, report_id: str) -> dict[str, str]:
+        return self.create_feishu_document(report_id)
+
+    def create_feishu_document(self, report_id: str) -> dict[str, str]:
         if self.scenario == FakeScenario.UNKNOWN:
-            return {"status": "unknown", "external_id": f"fake-document-{report_id}"}
+            return {
+                "status": "unknown",
+                "external_id": f"fake-document-{report_id}",
+                "url": f"https://fake.feishu.local/doc/{report_id}",
+            }
         if self.scenario == FakeScenario.PARTIAL_FAILURE:
-            return {"status": "failed", "external_id": f"fake-document-{report_id}"}
-        return {"status": "success", "external_id": f"fake-document-{report_id}"}
+            return {
+                "status": "failed",
+                "external_id": f"fake-document-{report_id}",
+                "url": f"https://fake.feishu.local/doc/{report_id}",
+                "error_class": "document_creation_failed",
+            }
+        return {
+            "status": "success",
+            "external_id": f"fake-document-{report_id}",
+            "url": f"https://fake.feishu.local/doc/{report_id}",
+            "provider_request_id": f"fake-request-document-{report_id}",
+        }
+
+    def send_group_summary(self, run_id: str) -> dict[str, str]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return {
+                "status": "unknown",
+                "external_id": f"fake-message-{run_id}",
+                "url": f"https://fake.feishu.local/message/{run_id}",
+            }
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return {
+                "status": "failed",
+                "external_id": f"fake-message-{run_id}",
+                "url": f"https://fake.feishu.local/message/{run_id}",
+                "error_class": "message_send_failed",
+            }
+        return {
+            "status": "success",
+            "external_id": f"fake-message-{run_id}",
+            "url": f"https://fake.feishu.local/message/{run_id}",
+            "provider_request_id": f"fake-request-message-{run_id}",
+        }
+
+    def upsert_bitable_archive(self, run_id: str) -> dict[str, str]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return {
+                "status": "unknown",
+                "external_id": f"fake-archive-{run_id}",
+                "url": f"https://fake.feishu.local/archive/{run_id}",
+            }
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return {
+                "status": "failed",
+                "external_id": f"fake-archive-{run_id}",
+                "url": f"https://fake.feishu.local/archive/{run_id}",
+                "error_class": "archive_write_failed",
+            }
+        return {
+            "status": "success",
+            "external_id": f"fake-archive-{run_id}",
+            "url": f"https://fake.feishu.local/archive/{run_id}",
+            "provider_request_id": f"fake-request-archive-{run_id}",
+        }

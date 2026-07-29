@@ -54,6 +54,11 @@ def build_workflow_graph(
     builder.add_node("build_publish_plan", _build_publish_plan(publisher))
     builder.add_node("request_publish_confirmation", _request_publish_confirmation(publisher))
     builder.add_node("wait_publish_confirmation", _wait_publish_confirmation(publisher))
+    builder.add_node("create_feishu_document", _create_feishu_document(publisher))
+    builder.add_node("send_group_summary", _send_group_summary(publisher))
+    builder.add_node("archive_report_record", _archive_report_record(publisher))
+    builder.add_node("verify_side_effects", _verify_side_effects(publisher))
+    builder.add_node("complete_run", _complete_run)
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -161,6 +166,46 @@ def build_workflow_graph(
         {
             "wait_publish_confirmation": "wait_publish_confirmation",
             "generate_structured_report": "generate_structured_report",
+            "create_feishu_document": "create_feishu_document",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "create_feishu_document",
+        _publish_side_effect_route,
+        {
+            "send_group_summary": "send_group_summary",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "send_group_summary",
+        _publish_side_effect_route,
+        {
+            "archive_report_record": "archive_report_record",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "archive_report_record",
+        _publish_side_effect_route,
+        {
+            "verify_side_effects": "verify_side_effects",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "verify_side_effects",
+        _publish_side_effect_route,
+        {
+            "complete_run": "complete_run",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "complete_run",
+        _publish_side_effect_route,
+        {
             END: END,
         },
     )
@@ -899,9 +944,9 @@ def _wait_publish_confirmation(publisher: PublishingService):
                 "active_approval_ref": outcome.approval_ref,
                 "approval_type": "publish",
                 "approval_revision": outcome.approval_revision,
-                "status": "approved" if outcome.current_stage == "publish_approved" else "cancelled",
+                "status": "approved" if outcome.current_stage != "cancelled" else "cancelled",
                 "approved_scope_hash": None,
-                "approved_plan_hash": outcome.plan_hash if outcome.current_stage == "publish_approved" else None,
+                "approved_plan_hash": outcome.plan_hash if outcome.current_stage != "cancelled" else None,
                 "challenge_id": outcome.challenge_id or challenge_id,
                 "requested_from": approval["requested_from"],
             },
@@ -920,6 +965,236 @@ def _wait_publish_confirmation(publisher: PublishingService):
         }
 
     return _node
+
+
+def _create_feishu_document(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approved_plan_hash = _require_publish_plan_hash(publish)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "create_feishu_document",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        outcome = publisher.create_feishu_document(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": outcome.current_stage or "blocked",
+                "current_node": "create_feishu_document",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish": {
+                "plan_hash": approved_plan_hash,
+                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "next_operation_index": outcome.next_operation_index or 1,
+                "side_effect_status": outcome.side_effect_status or "executing",
+            },
+            "current_stage": outcome.current_stage or "publishing",
+            "current_node": outcome.current_node or "send_group_summary",
+            "requested_action": None,
+            "resume_from": "create_feishu_document",
+            "control": {
+                "requested_action": None,
+                "resume_from": "create_feishu_document",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _send_group_summary(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approved_plan_hash = _require_publish_plan_hash(publish)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "send_group_summary",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        outcome = publisher.send_group_summary(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": outcome.current_stage or "blocked",
+                "current_node": "send_group_summary",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish": {
+                "plan_hash": approved_plan_hash,
+                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "next_operation_index": outcome.next_operation_index or 2,
+                "side_effect_status": outcome.side_effect_status or "executing",
+            },
+            "current_stage": outcome.current_stage or "publishing",
+            "current_node": outcome.current_node or "archive_report_record",
+            "requested_action": None,
+            "resume_from": "send_group_summary",
+            "control": {
+                "requested_action": None,
+                "resume_from": "send_group_summary",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _archive_report_record(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approved_plan_hash = _require_publish_plan_hash(publish)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "archive_report_record",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        outcome = publisher.archive_report_record(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": outcome.current_stage or "blocked",
+                "current_node": "archive_report_record",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish": {
+                "plan_hash": approved_plan_hash,
+                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "next_operation_index": outcome.next_operation_index or 3,
+                "side_effect_status": outcome.side_effect_status or "executing",
+            },
+            "current_stage": outcome.current_stage or "publishing",
+            "current_node": outcome.current_node or "verify_side_effects",
+            "requested_action": None,
+            "resume_from": "archive_report_record",
+            "control": {
+                "requested_action": None,
+                "resume_from": "archive_report_record",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _verify_side_effects(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approved_plan_hash = _require_publish_plan_hash(publish)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "verify_side_effects",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        outcome = publisher.verify_side_effects(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": outcome.current_stage or "blocked",
+                "current_node": "verify_side_effects",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish": {
+                "plan_hash": approved_plan_hash,
+                "operation_refs": publish.get("operation_refs", []),
+                "next_operation_index": outcome.next_operation_index or 3,
+                "side_effect_status": outcome.side_effect_status or "verified",
+            },
+            "current_stage": outcome.current_stage or "publishing",
+            "current_node": outcome.current_node or "complete_run",
+            "requested_action": None,
+            "resume_from": "verify_side_effects",
+            "control": {
+                "requested_action": None,
+                "resume_from": "verify_side_effects",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _complete_run(state: WorkflowState) -> dict[str, object]:
+    ensure_state_is_safe(state)
+    publish = state.get("publish")
+    plan_hash = None
+    side_effect_status = None
+    operation_refs: list[object] = []
+    next_operation_index = 0
+    if isinstance(publish, Mapping):
+        plan_hash = publish.get("plan_hash") if isinstance(publish.get("plan_hash"), str) else None
+        side_effect_status = (
+            publish.get("side_effect_status") if isinstance(publish.get("side_effect_status"), str) else None
+        )
+        existing_refs = publish.get("operation_refs")
+        if isinstance(existing_refs, list):
+            operation_refs = [item for item in existing_refs if isinstance(item, str)]
+        next_value = publish.get("next_operation_index")
+        if isinstance(next_value, int):
+            next_operation_index = next_value
+    return {
+        "publish": {
+            "plan_hash": plan_hash,
+            "operation_refs": operation_refs,
+            "next_operation_index": next_operation_index,
+            "side_effect_status": side_effect_status or "verified",
+        },
+        "current_stage": "succeeded",
+        "current_node": "complete_run",
+        "requested_action": None,
+        "resume_from": "complete_run",
+        "control": {
+            "requested_action": None,
+            "resume_from": "complete_run",
+            "cancel_requested": False,
+        },
+        "cancel_requested": False,
+    }
 
 
 def _generation_approval_route(state: WorkflowState) -> str:
@@ -958,7 +1233,21 @@ def _publish_approval_route(state: WorkflowState) -> str:
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
-    if current_node in {"wait_publish_confirmation", "generate_structured_report"}:
+    if current_node in {"wait_publish_confirmation", "generate_structured_report", "create_feishu_document"}:
+        return str(current_node)
+    return END
+
+
+def _publish_side_effect_route(state: WorkflowState) -> str:
+    if state.get("current_stage") in {"blocked", "succeeded"}:
+        return END
+    current_node = state.get("current_node")
+    if current_node in {
+        "send_group_summary",
+        "archive_report_record",
+        "verify_side_effects",
+        "complete_run",
+    }:
         return str(current_node)
     return END
 
@@ -1143,6 +1432,18 @@ class _MissingPublishingService:
         raise RuntimeError("publishing_service is required")
 
     def resume_publish_confirmation(self, *_: object, **__: object) -> PublishResumeOutcome:
+        raise RuntimeError("publishing_service is required")
+
+    def create_feishu_document(self, *_: object, **__: object) -> Any:
+        raise RuntimeError("publishing_service is required")
+
+    def send_group_summary(self, *_: object, **__: object) -> Any:
+        raise RuntimeError("publishing_service is required")
+
+    def archive_report_record(self, *_: object, **__: object) -> Any:
+        raise RuntimeError("publishing_service is required")
+
+    def verify_side_effects(self, *_: object, **__: object) -> Any:
         raise RuntimeError("publishing_service is required")
 
 

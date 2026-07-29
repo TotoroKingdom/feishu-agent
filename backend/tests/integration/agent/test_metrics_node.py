@@ -75,7 +75,7 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
     assert first_resume.status == "completed"
     assert duplicate_resume.status == "completed"
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
-    assert first_resume.snapshot.values["current_stage"] == "publish_approved"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert first_resume.snapshot.values["metrics_ref"] == duplicate_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
@@ -91,7 +91,7 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "publish_approved"
+        assert run_row.current_stage == "succeeded"
         assert len(metric_snapshots) == 1
         assert metric_snapshots[0].definition_version == "minimal.v1"
         assert len(tool_executions) == 10

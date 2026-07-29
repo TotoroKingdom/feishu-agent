@@ -213,6 +213,8 @@ class WorkflowRuntime:
             "report_generated",
             "report_rendered",
             "publish_approved",
+            "publishing",
+            "succeeded",
         }:
             return "completed"
         if stage == "blocked":
@@ -267,6 +269,10 @@ class WorkflowRuntime:
             return "report_grounding"
         if stage == "calculating_metrics":
             return "metrics_calculating"
+        if stage == "publishing":
+            return "side_effects_executing"
+        if stage == "succeeded":
+            return "side_effects_complete"
         if stage == "blocked":
             return "generation_confirmation_blocked"
         if stage == "rejected":

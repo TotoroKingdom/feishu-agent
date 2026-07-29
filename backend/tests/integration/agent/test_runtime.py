@@ -79,7 +79,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
     assert publish_resume.status == "completed"
     assert completed is not None
-    assert completed.values["current_stage"] == "publish_approved"
+    assert completed.values["current_stage"] == "succeeded"
     assert completed.values["current_node"] == "complete_run"
     assert isinstance(completed.values["source_batch_refs"], list)
     assert len(completed.values["source_batch_refs"]) == 2
@@ -99,7 +99,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
         assert row.status == "completed"
-        assert row.current_stage == "publish_approved"
+        assert row.current_stage == "succeeded"
         assert row.scope_revision == 1
         assert metric_row is not None
 
