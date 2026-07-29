@@ -1,7 +1,19 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import Boolean, Date, DateTime, Float, ForeignKey, Index, Integer, JSON, String, UniqueConstraint, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -210,7 +222,9 @@ class NormalizedEntity(Base):
 
 class ValidationResult(Base):
     __tablename__ = "validation_results"
-    __table_args__ = (UniqueConstraint("run_id", "input_snapshot_hash", name="uq_validation_results"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "input_snapshot_hash", name="uq_validation_results"),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     run_id: Mapped[str] = mapped_column(
@@ -433,11 +447,84 @@ class ReportArtifact(Base):
     verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class CallbackEvent(Base):
+    __tablename__ = "callback_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "external_event_id",
+            name="uq_callback_events_provider_event_id",
+        ),
+        Index("ix_callback_events_run_id", "run_id"),
+        Index("ix_callback_events_status_received_at", "status", "received_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    provider: Mapped[str] = mapped_column(String(32))
+    external_event_id: Mapped[str] = mapped_column(String(256))
+    event_type: Mapped[str] = mapped_column(String(64))
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    actor_id: Mapped[str] = mapped_column(String(128))
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(24), default="received")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class OutboxMessage(Base):
+    __tablename__ = "outbox_messages"
+    __table_args__ = (
+        UniqueConstraint("dedupe_key", name="uq_outbox_messages_dedupe_key"),
+        Index("ix_outbox_messages_status_available_at", "status", "available_at"),
+        Index("ix_outbox_messages_topic", "topic"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    topic: Mapped[str] = mapped_column(String(128))
+    aggregate_type: Mapped[str] = mapped_column(String(64))
+    aggregate_id: Mapped[str] = mapped_column(String(128))
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    dedupe_key: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    available_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    provider_request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    external_message_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dead_lettered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
 class ReportClaim(Base):
     __tablename__ = "report_claims"
-    __table_args__ = (
-        UniqueConstraint("report_version_id", "claim_key", name="uq_report_claims"),
-    )
+    __table_args__ = (UniqueConstraint("report_version_id", "claim_key", name="uq_report_claims"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     report_version_id: Mapped[str] = mapped_column(
@@ -456,9 +543,7 @@ class ReportClaim(Base):
 
 class ReportEvidence(Base):
     __tablename__ = "report_evidence"
-    __table_args__ = (
-        UniqueConstraint("claim_id", "evidence_item_id", name="uq_report_evidence"),
-    )
+    __table_args__ = (UniqueConstraint("claim_id", "evidence_item_id", name="uq_report_evidence"),)
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     claim_id: Mapped[str] = mapped_column(

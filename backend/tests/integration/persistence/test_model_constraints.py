@@ -8,6 +8,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) == {
+        "callback_events",
         "evidence_items",
         "evidence_sets",
         "feishu_resources",
@@ -23,6 +24,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "report_evidence",
         "report_runs",
         "report_versions",
+        "outbox_messages",
         "side_effect_attempts",
         "side_effect_operations",
         "run_status_history",
@@ -45,6 +47,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_human_approvals_challenge_id"
         for constraint in inspector.get_unique_constraints("human_approvals")
+    )
+    assert any(
+        constraint["name"] == "uq_callback_events_provider_event_id"
+        for constraint in inspector.get_unique_constraints("callback_events")
     )
     assert any(
         constraint["name"] == "uq_source_data_batches_identity"
@@ -81,6 +87,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_side_effect_operations_idempotency_key"
         for constraint in inspector.get_unique_constraints("side_effect_operations")
+    )
+    assert any(
+        constraint["name"] == "uq_outbox_messages_dedupe_key"
+        for constraint in inspector.get_unique_constraints("outbox_messages")
     )
     assert any(
         constraint["name"] == "uq_side_effect_attempts"
