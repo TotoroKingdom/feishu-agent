@@ -10,6 +10,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     UniqueConstraint,
     func,
@@ -51,6 +52,36 @@ class FeishuResource(Base):
     resource_type: Mapped[str] = mapped_column(String(64))
     external_id: Mapped[str] = mapped_column(String(300))
     __table_args__ = (UniqueConstraint("project_id", "resource_type", name="uq_feishu_resource"),)
+
+
+class EncryptedCredential(Base):
+    __tablename__ = "encrypted_credentials"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "credential_type", "label", name="uq_encrypted_credentials_label"
+        ),
+        UniqueConstraint("fingerprint", name="uq_encrypted_credentials_fingerprint"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    credential_type: Mapped[str] = mapped_column(String(32))
+    label: Mapped[str] = mapped_column(String(128))
+    ciphertext: Mapped[bytes] = mapped_column(LargeBinary)
+    nonce: Mapped[bytes] = mapped_column(LargeBinary)
+    key_version: Mapped[str] = mapped_column(String(32))
+    fingerprint: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24), default="active")
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_validated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(String(128))
+    updated_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ReportRun(Base):
