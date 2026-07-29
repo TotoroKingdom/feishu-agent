@@ -225,6 +225,33 @@ class ValidationResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class MetricSnapshot(Base):
+    __tablename__ = "metric_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "normalized_snapshot_id",
+            "definition_version",
+            "content_hash",
+            name="uq_metric_snapshots",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    normalized_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("normalized_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    definition_version: Mapped[str] = mapped_column(String(32))
+    period_start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    period_end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    metrics: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ToolExecution(Base):
     __tablename__ = "tool_executions"
     __table_args__ = (

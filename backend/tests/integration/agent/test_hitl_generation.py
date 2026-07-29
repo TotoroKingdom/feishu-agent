@@ -8,7 +8,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.agent.runtime import WorkflowRuntime
 from app.agent.state import thread_id_for_run
-from app.db.models import Base, HumanApproval, Project, ReportRun
+from app.db.models import Base, HumanApproval, MetricSnapshot, Project, ReportRun
 from app.domain.runs import RunCreationService
 
 
@@ -61,24 +61,27 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
     assert started.status == "waiting"
     assert started.snapshot.values["current_stage"] == "waiting_confirmation"  # type: ignore[index]
     assert first_resume.status == "completed"
-    assert first_resume.snapshot.values["current_stage"] == "validated"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_stage"] == "metrics_calculated"  # type: ignore[index]
     assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
+    assert first_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert duplicate_resume.status == "completed"
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
+        metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
         approvals = session.scalars(
             select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.revision)
         ).all()
 
         assert run_row is not None
         assert run_row.status == "completed"
-        assert run_row.current_stage == "validated"
+        assert run_row.current_stage == "metrics_calculated"
         assert run_row.scope_revision == 1
         assert len(approvals) == 1
         assert approvals[0].status == "approved"
         assert approvals[0].decision == "approve_generation"
         assert approvals[0].challenge_id == started.snapshot.values["approval"]["challenge_id"]  # type: ignore[index]
+        assert metric_row is not None
 
 
 def test_generation_confirmation_modify_creates_new_revision_and_requeues_confirmation() -> None:

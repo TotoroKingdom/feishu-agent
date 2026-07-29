@@ -19,15 +19,18 @@ from app.approvals import (
     build_generation_scope,
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
+from app.metrics.service import MetricStageOutcome, MetricsService
 
 
 def build_workflow_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     approval_store: GenerationApprovalStore | None = None,
     collection_service: CollectionService | None = None,
+    metrics_service: MetricsService | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
     collector = collection_service or _MissingCollectionService()
+    metrics = metrics_service or _MissingMetricsService()
     builder = StateGraph(WorkflowState)
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
@@ -37,6 +40,7 @@ def build_workflow_graph(
     builder.add_node("collect_github_data", _collect_github_data(collector))
     builder.add_node("normalize_data", _normalize_data(collector))
     builder.add_node("validate_data", _validate_data(collector))
+    builder.add_node("calculate_metrics", _calculate_metrics(metrics))
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -74,7 +78,15 @@ def build_workflow_graph(
             END: END,
         },
     )
-    builder.add_edge("validate_data", END)
+    builder.add_conditional_edges(
+        "validate_data",
+        _collection_route,
+        {
+            "calculate_metrics": "calculate_metrics",
+            END: END,
+        },
+    )
+    builder.add_edge("calculate_metrics", END)
     return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
@@ -373,9 +385,39 @@ def _validate_data(collector: CollectionService):
                 "error_summary": outcome.error_summary,
             }
         return {
-            "current_stage": "validated",
-            "current_node": "complete_run",
+            "current_stage": "calculating_metrics",
+            "current_node": "calculate_metrics",
             "validation_result_ref": outcome.validation_result_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _calculate_metrics(metrics_service: MetricsService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        normalized_snapshot_ref = state.get("normalized_snapshot_ref")
+        if not isinstance(normalized_snapshot_ref, str) or not normalized_snapshot_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "calculate_metrics",
+                "error_code": "NORMALIZED_SNAPSHOT_MISSING",
+                "error_summary": "Normalized snapshot missing from state",
+            }
+        outcome = metrics_service.calculate_metrics(state["run_id"], normalized_snapshot_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "calculate_metrics",
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "metrics_calculated",
+            "current_node": "complete_run",
+            "metrics_ref": outcome.metrics_ref,
             "error_code": None,
             "error_summary": None,
         }
@@ -398,7 +440,7 @@ def _collection_route(state: WorkflowState) -> str:
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
-    if current_node in {"collect_github_data", "normalize_data", "validate_data"}:
+    if current_node in {"collect_github_data", "normalize_data", "validate_data", "calculate_metrics"}:
         return str(current_node)
     return END
 
@@ -554,3 +596,8 @@ class _MissingCollectionService:
 
     def validate_data(self, *_: object, **__: object) -> CollectionStageOutcome:
         raise RuntimeError("collection_service is required")
+
+
+class _MissingMetricsService:
+    def calculate_metrics(self, *_: object, **__: object) -> MetricStageOutcome:
+        raise RuntimeError("metrics_service is required")

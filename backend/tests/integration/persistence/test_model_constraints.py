@@ -10,6 +10,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert set(inspector.get_table_names()) == {
         "feishu_resources",
         "human_approvals",
+        "metric_snapshots",
         "normalized_entities",
         "normalized_snapshots",
         "projects",
@@ -51,6 +52,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_validation_results"
         for constraint in inspector.get_unique_constraints("validation_results")
+    )
+    assert any(
+        constraint["name"] == "uq_metric_snapshots"
+        for constraint in inspector.get_unique_constraints("metric_snapshots")
     )
     assert any(
         constraint["name"] == "uq_tool_executions_attempt"

@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.agent.runtime import WorkflowRuntime, WorkflowWorker
 from app.agent.state import thread_id_for_run
-from app.db.models import Base, Project, ReportRun
+from app.db.models import Base, MetricSnapshot, Project, ReportRun
 from app.domain.runs import RunCreationService
 
 
@@ -63,7 +63,7 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert snapshot.values["current_stage"] == "waiting_confirmation"
     assert resumed.status == "completed"
     assert completed is not None
-    assert completed.values["current_stage"] == "validated"
+    assert completed.values["current_stage"] == "metrics_calculated"
     assert completed.values["current_node"] == "complete_run"
     assert isinstance(completed.values["source_batch_refs"], list)
     assert len(completed.values["source_batch_refs"]) == 2
@@ -72,14 +72,18 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert completed.values["normalized_snapshot_ref"]
     assert isinstance(completed.values["validation_result_ref"], str)
     assert completed.values["validation_result_ref"]
+    assert isinstance(completed.values["metrics_ref"], str)
+    assert completed.values["metrics_ref"]
 
     with factory() as session:
         row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
+        metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
         assert row.status == "completed"
-        assert row.current_stage == "validated"
+        assert row.current_stage == "metrics_calculated"
         assert row.scope_revision == 1
+        assert metric_row is not None
 
 
 def test_worker_restart_finds_waiting_runs_and_resumes_them() -> None:

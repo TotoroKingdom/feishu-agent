@@ -13,7 +13,7 @@ from app.agent.checkpoint import open_postgres_checkpointer
 from app.agent.runtime import WorkflowRuntime, WorkflowWorker
 from app.agent.state import thread_id_for_run
 from app.core.config import Settings
-from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
+from app.db.models import HumanApproval, MetricSnapshot, Project, ReportRun, RunStatusHistory
 from app.domain.runs import RunCreationService
 
 
@@ -77,15 +77,17 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
 
             snapshot = restarted_worker.inspect(run_id)
             assert snapshot is not None
-            assert snapshot.values["current_stage"] == "validated"
+            assert snapshot.values["current_stage"] == "metrics_calculated"
             assert snapshot.values["current_node"] == "complete_run"
             assert isinstance(snapshot.values["source_batch_refs"], list)
             assert len(snapshot.values["source_batch_refs"]) == 2
             assert snapshot.values["normalized_snapshot_ref"]
             assert snapshot.values["validation_result_ref"]
+            assert snapshot.values["metrics_ref"]
 
             with factory() as session:
                 run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
+                metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
                 history_rows = session.scalars(
                     select(RunStatusHistory)
                     .where(RunStatusHistory.run_id == run_id)
@@ -94,9 +96,10 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 assert run_row is not None
                 assert run_row.thread_id == thread_id
                 assert run_row.status == "completed"
-                assert run_row.current_stage == "validated"
+                assert run_row.current_stage == "metrics_calculated"
                 assert run_row.scope_revision == 1
                 assert [row.to_status for row in history_rows] == ["waiting", "completed"]
+                assert metric_row is not None
         finally:
             saver.delete_thread(thread_id)
             with factory() as session:

@@ -15,6 +15,7 @@ from app.approvals import GenerationApprovalStore
 from app.agent.graph import build_workflow_graph
 from app.agent.state import build_initial_state, thread_id_for_run
 from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
+from app.metrics.service import MetricsService
 
 SessionFactory = Callable[[], Session]
 
@@ -34,13 +35,18 @@ class WorkflowRuntime:
         session_factory: SessionFactory,
         checkpointer: Any | None = None,
         collection_service: CollectionService | None = None,
+        metrics_service: MetricsService | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._approval_store = GenerationApprovalStore(session_factory)
         self._collection_service = collection_service or CollectionService(session_factory)
+        self._metrics_service = metrics_service or MetricsService(session_factory)
         self._checkpointer: Any = checkpointer or MemorySaver()
         self._graph = build_workflow_graph(
-            self._checkpointer, self._approval_store, self._collection_service
+            self._checkpointer,
+            self._approval_store,
+            self._collection_service,
+            self._metrics_service,
         )
 
     def start(self, run_id: str) -> WorkflowExecutionResult:
@@ -211,6 +217,10 @@ class WorkflowRuntime:
             return "generation_confirmation_waiting"
         if stage == "validated":
             return "generation_confirmation_approved"
+        if stage == "metrics_calculated":
+            return "metrics_calculated"
+        if stage == "calculating_metrics":
+            return "metrics_calculating"
         if stage == "blocked":
             return "generation_confirmation_blocked"
         if stage == "rejected":
@@ -301,8 +311,14 @@ class WorkflowWorker:
         session_factory: SessionFactory,
         checkpointer: Any | None = None,
         collection_service: CollectionService | None = None,
+        metrics_service: MetricsService | None = None,
     ) -> None:
-        self._runtime = WorkflowRuntime(session_factory, checkpointer, collection_service)
+        self._runtime = WorkflowRuntime(
+            session_factory,
+            checkpointer,
+            collection_service,
+            metrics_service,
+        )
 
     def recover_waiting_runs(self) -> list[str]:
         return self._runtime.recover_waiting_run_ids()
