@@ -5,20 +5,31 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
+from langgraph.checkpoint.memory import MemorySaver
 from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.core.config import Settings
 from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
+from app.agent.runtime import WorkflowRuntime
+from app.core.config import Settings
 from app.db.models import Project
 from app.domain.runs import RunCreationService
 from app.observability.context import request_id_context
 from app.observability.logging import configure_json_logging
+from app.providers.feishu import (
+    FeishuAuthError,
+    FeishuCallbackConflictError,
+    FeishuCallbackService,
+    FeishuCallbackValidationError,
+    FeishuCardActionRequest,
+    FeishuEventRequest,
+)
 
 RequestCheck = Callable[[], bool]
 SessionFactory = Callable[[], Session]
 REQUEST_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+FEISHU_VERIFICATION_HEADER = "X-Feishu-Verification-Token"
 
 
 class RunCreateRequest(BaseModel):
@@ -39,12 +50,15 @@ def create_app(
     readiness_checks: Mapping[str, RequestCheck] | None = None,
     settings: Settings | None = None,
     session_factory: SessionFactory | None = None,
+    workflow_runtime: WorkflowRuntime | None = None,
 ) -> FastAPI:
     configure_json_logging()
     application = FastAPI(title="Feishu Project Weekly Agent", version="0.1.0")
     application.state.settings = settings or Settings()
     application.state.readiness_checks = dict(readiness_checks or {})
     application.state.session_factory = session_factory
+    application.state.workflow_runtime = workflow_runtime
+    application.state.feishu_callback_service = None
 
     @application.middleware("http")
     async def request_context(
@@ -125,6 +139,34 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
         return JSONResponse(content=envelope.model_dump(mode="json"))
 
+    @application.post("/api/v1/feishu/events")
+    def feishu_events(request: Request, payload: FeishuEventRequest) -> JSONResponse:
+        service = _feishu_callback_service(application)
+        token = _feishu_verification_token(request)
+        try:
+            result = service.handle_event(payload, verification_token=token)
+        except FeishuCallbackValidationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except FeishuCallbackConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except FeishuAuthError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        return JSONResponse(content=result)
+
+    @application.post("/api/v1/feishu/card-actions")
+    def feishu_card_actions(request: Request, payload: FeishuCardActionRequest) -> JSONResponse:
+        service = _feishu_callback_service(application)
+        token = _feishu_verification_token(request)
+        try:
+            result = service.handle_card_action(payload, verification_token=token)
+        except FeishuCallbackValidationError as error:
+            raise HTTPException(status_code=400, detail=str(error)) from error
+        except FeishuCallbackConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except FeishuAuthError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        return JSONResponse(content=result)
+
     return application
 
 
@@ -137,3 +179,34 @@ def _session_factory(application: FastAPI) -> SessionFactory:
         return factory
     engine = create_engine(application.state.settings.database_url)
     return sessionmaker(engine, class_=Session, expire_on_commit=False)
+
+
+def _feishu_callback_service(application: FastAPI) -> FeishuCallbackService:
+    service = application.state.feishu_callback_service
+    if service is None:
+        def runtime_factory() -> WorkflowRuntime:
+            return _workflow_runtime(application)
+
+        service = FeishuCallbackService(
+            _session_factory(application),
+            application.state.settings,
+            runtime_factory=runtime_factory,
+        )
+        application.state.feishu_callback_service = service
+    return service
+
+
+def _workflow_runtime(application: FastAPI) -> WorkflowRuntime:
+    runtime = application.state.workflow_runtime
+    if runtime is None:
+        runtime = WorkflowRuntime(_session_factory(application), MemorySaver())
+        application.state.workflow_runtime = runtime
+    return runtime
+
+
+def _feishu_verification_token(request: Request) -> str | None:
+    return (
+        request.headers.get(FEISHU_VERIFICATION_HEADER)
+        or request.headers.get("X-Lark-Verification-Token")
+        or request.headers.get("X-Feishu-Token")
+    )

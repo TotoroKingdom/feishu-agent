@@ -12,6 +12,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "evidence_items",
         "evidence_sets",
         "feishu_resources",
+        "feishu_message_deliveries",
         "human_approvals",
         "metric_snapshots",
         "normalized_entities",
@@ -91,6 +92,14 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_outbox_messages_dedupe_key"
         for constraint in inspector.get_unique_constraints("outbox_messages")
+    )
+    assert any(
+        constraint["name"] == "uq_feishu_message_deliveries_idempotency_key"
+        for constraint in inspector.get_unique_constraints("feishu_message_deliveries")
+    )
+    assert any(
+        constraint["name"] == "uq_feishu_message_deliveries_run_purpose_revision_recipient"
+        for constraint in inspector.get_unique_constraints("feishu_message_deliveries")
     )
     assert any(
         constraint["name"] == "uq_side_effect_attempts"

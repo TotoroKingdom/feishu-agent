@@ -120,17 +120,46 @@ class CallbackInboxStore:
             return event
 
     def ack_callback_event(self, event_id: int) -> CallbackEvent:
+        return self.mark_callback_event_processed(event_id)
+
+    def mark_callback_event_processed(
+        self, event_id: int, *, processed_at: datetime | None = None
+    ) -> CallbackEvent:
         with self._session_factory() as session:
             event = session.get(CallbackEvent, event_id)
             if event is None:
                 raise ValueError(f"unknown callback event id: {event_id}")
-            if event.status != "claimed":
-                raise ValueError("callback event must be claimed before ack")
             event.status = "processed"
-            event.processed_at = datetime.now(UTC)
+            event.processed_at = processed_at or datetime.now(UTC)
             event.lease_expires_at = None
             event.claimed_at = None
             event.claimed_by = None
+            session.commit()
+            session.refresh(event)
+            return event
+
+    def mark_callback_event_failed(
+        self,
+        event_id: int,
+        *,
+        error_class: str,
+        error_summary: str,
+        dead_letter: bool = False,
+    ) -> CallbackEvent:
+        with self._session_factory() as session:
+            event = session.get(CallbackEvent, event_id)
+            if event is None:
+                raise ValueError(f"unknown callback event id: {event_id}")
+            event.last_error_class = error_class
+            event.last_error_summary = error_summary
+            event.claimed_at = None
+            event.claimed_by = None
+            event.lease_expires_at = None
+            if dead_letter:
+                event.status = "dead_lettered"
+                event.dead_lettered_at = datetime.now(UTC)
+            else:
+                event.status = "failed"
             session.commit()
             session.refresh(event)
             return event

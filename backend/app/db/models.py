@@ -522,6 +522,43 @@ class OutboxMessage(Base):
     last_error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
 
+class FeishuMessageDelivery(Base):
+    __tablename__ = "feishu_message_deliveries"
+    __table_args__ = (
+        UniqueConstraint("idempotency_key", name="uq_feishu_message_deliveries_idempotency_key"),
+        UniqueConstraint(
+            "run_id",
+            "purpose",
+            "revision",
+            "recipient_type",
+            "recipient_id",
+            name="uq_feishu_message_deliveries_run_purpose_revision_recipient",
+        ),
+        Index("ix_feishu_message_deliveries_status_created_at", "status", "created_at"),
+        Index("ix_feishu_message_deliveries_run_id", "run_id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), nullable=True
+    )
+    onboarding_session_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    purpose: Mapped[str] = mapped_column(String(64))
+    revision: Mapped[int] = mapped_column(Integer)
+    recipient_type: Mapped[str] = mapped_column(String(16))
+    recipient_id: Mapped[str] = mapped_column(String(128))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), default="pending")
+    external_message_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ReportClaim(Base):
     __tablename__ = "report_claims"
     __table_args__ = (UniqueConstraint("report_version_id", "claim_key", name="uq_report_claims"),)

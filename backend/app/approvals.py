@@ -302,6 +302,12 @@ class PublishApprovalStore:
                 )
             )
 
+    def load_approval_by_challenge(self, challenge_id: str) -> HumanApproval | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(HumanApproval).where(HumanApproval.challenge_id == challenge_id)
+            )
+
     def mark_publish_approval_decision(
         self,
         *,
