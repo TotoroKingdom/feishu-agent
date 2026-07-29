@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.domain.source import (
     DEFAULT_FEISHU_RESOURCE_ID,
@@ -19,9 +19,9 @@ from app.reports.normalization import (
 
 
 def test_normalization_filters_irrelevant_rows_and_builds_stable_hashes() -> None:
-    fetched_at = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
-    period_start = datetime(2026, 7, 20, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    fetched_at = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    period_start = datetime(2026, 7, 20, 0, 0, tzinfo=UTC)
+    period_end = datetime(2026, 7, 27, 0, 0, tzinfo=UTC)
 
     feishu_entities = normalize_feishu_records(
         [

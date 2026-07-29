@@ -21,7 +21,7 @@ from app.domain.source import (
     DEFAULT_FEISHU_RESOURCE_ID,
     DEFAULT_GITHUB_RESOURCE_ID,
     ENTITY_TYPE_FEISHU_RECORD,
-    ENTITY_TYPE_GITHUB_ISSUE,
+    ENTITY_TYPE_GITHUB_REPOSITORY,
     MAX_SOURCE_BATCH_RECORDS,
     NORMALIZER_VERSION,
     SOURCE_TYPE_FEISHU_BITABLE,
@@ -35,11 +35,18 @@ from app.providers.feishu.bitable import (
     FeishuBitableReadPage,
     FeishuBitableSource,
 )
+from app.providers.github.resources import GitHubRepositorySource
 from app.reports.normalization import (
     build_snapshot_content_hash,
     build_source_batch_set_hash_from_batches,
     normalize_feishu_records,
+    normalize_github_commit_records,
+    normalize_github_contributor_records,
     normalize_github_issue_records,
+    normalize_github_milestone_records,
+    normalize_github_pull_request_records,
+    normalize_github_repository_record,
+    normalize_github_review_records,
 )
 from app.reports.validation import validate_normalized_entities
 
@@ -59,7 +66,7 @@ class CollectionStageOutcome:
 @dataclass(slots=True)
 class CollectionProviders:
     feishu: FeishuBitableSource = field(default_factory=FakeFeishuProvider)
-    github: FakeGitHubProvider = field(default_factory=FakeGitHubProvider)
+    github: GitHubRepositorySource = field(default_factory=FakeGitHubProvider)
 
 
 class CollectionService:
@@ -172,10 +179,11 @@ class CollectionService:
     ) -> CollectionStageOutcome:
         with self._session_factory() as session:
             run = self._load_run(session, run_id)
-            records = self._providers.github.read_issue_records()
-            fetch_status = self._fetch_status(records)
-            payload = {"records": records}
-            source_resource_id = _first_or_default(
+            github_data = self._providers.github.read_repository_core_data(scope)
+            payload = github_data.to_payload()
+            records = list(payload.get("records", []))
+            fetch_status = github_data.fetch_status or self._fetch_status(records)
+            source_resource_id = github_data.repository_ref or _first_or_default(
                 scope.get("selected_repository_ids"), DEFAULT_GITHUB_RESOURCE_ID
             )
             batch = self._upsert_source_batch(
@@ -183,19 +191,22 @@ class CollectionService:
                 run=run,
                 source_type=SOURCE_TYPE_GITHUB,
                 source_resource_id=source_resource_id,
-                entity_type=ENTITY_TYPE_GITHUB_ISSUE,
+                entity_type=ENTITY_TYPE_GITHUB_REPOSITORY,
                 page_no=1,
                 payload=payload,
-                record_count=len(records),
+                record_count=int(payload.get("records_count") or len(records)),
                 fetch_status=fetch_status,
             )
             self._record_tool_execution(
                 session,
                 run_id=run_id,
                 node_execution_id="collect_github_data",
-                tool_name="github.read_issue_records",
+                tool_name="github.read_repository_core_data",
                 request_summary={"source_resource_id": source_resource_id},
-                result_summary={"record_count": len(records), "fetch_status": fetch_status},
+                result_summary={
+                    "record_count": int(payload.get("records_count") or len(records)),
+                    "fetch_status": fetch_status,
+                },
                 data_ref=batch.id,
                 status="failed" if fetch_status == "failed" else "success",
                 error_class="source_fetch_failed" if fetch_status == "failed" else None,
@@ -232,8 +243,8 @@ class CollectionService:
 
             entity_rows: list[dict[str, object]] = []
             for batch in batches:
-                records = list(batch.payload.get("records", []))
                 if batch.source_type == SOURCE_TYPE_FEISHU_BITABLE:
+                    records = list(batch.payload.get("records", []))
                     entity_rows.extend(
                         normalize_feishu_records(
                             records,
@@ -245,9 +256,76 @@ class CollectionService:
                         )
                     )
                 elif batch.source_type == SOURCE_TYPE_GITHUB:
+                    records = list(batch.payload.get("records", []))
+                    repository = batch.payload.get("repository")
+                    pull_requests = list(batch.payload.get("pull_requests", []))
+                    commits = list(batch.payload.get("commits", []))
+                    reviews = list(batch.payload.get("reviews", []))
+                    milestones = list(batch.payload.get("milestones", []))
+                    contributors = list(batch.payload.get("contributors", []))
+                    entity_rows.extend(
+                        normalize_github_repository_record(
+                            repository if isinstance(repository, Mapping) else None,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
                     entity_rows.extend(
                         normalize_github_issue_records(
                             records,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
+                    entity_rows.extend(
+                        normalize_github_pull_request_records(
+                            pull_requests,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
+                    entity_rows.extend(
+                        normalize_github_commit_records(
+                            commits,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
+                    entity_rows.extend(
+                        normalize_github_review_records(
+                            reviews,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
+                    entity_rows.extend(
+                        normalize_github_milestone_records(
+                            milestones,
+                            source_batch_id=batch.id,
+                            source_resource_id=batch.source_resource_id,
+                            fetched_at=batch.fetched_at,
+                            period_start=batch.period_start,
+                            period_end=batch.period_end,
+                        )
+                    )
+                    entity_rows.extend(
+                        normalize_github_contributor_records(
+                            contributors,
                             source_batch_id=batch.id,
                             source_resource_id=batch.source_resource_id,
                             fetched_at=batch.fetched_at,

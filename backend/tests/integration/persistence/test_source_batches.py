@@ -91,6 +91,6 @@ def test_collection_reuses_identical_batches_and_results() -> None:
         assert run_row is not None
         assert len(source_batches) == 2
         assert len(normalized_snapshots) == 1
-        assert len(normalized_entities) == 4
+        assert len(normalized_entities) == 13
         assert len(validation_results) == 1
         assert len(tool_executions) == 4

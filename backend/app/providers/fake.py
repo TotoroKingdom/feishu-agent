@@ -1,6 +1,7 @@
 from enum import StrEnum
 
 from app.providers.feishu.bitable import FeishuBitableReadPage
+from app.providers.github.resources import GitHubRepositoryCoreData
 
 
 class FakeScenario(StrEnum):
@@ -63,52 +64,219 @@ class FakeGitHubProvider:
         self.scenario = scenario
 
     def read_repository(self) -> dict[str, object]:
-        if self.scenario == FakeScenario.UNKNOWN:
-            return {"external_id": "github-repository-example", "status": "unknown"}
-        if self.scenario == FakeScenario.PARTIAL_FAILURE:
-            return {"status": "failed", "error_class": "permission_denied"}
-        return {
-            "external_id": "github-repository-example",
-            "status": "success",
-            "issues": 3,
-            "pull_requests": 1,
-        }
+        data = self.read_repository_core_data({})
+        repository = dict(data.repository)
+        repository.setdefault("external_id", repository.get("id"))
+        repository["status"] = data.fetch_status
+        repository["issues"] = len(data.issues)
+        repository["pull_requests"] = len(data.pull_requests)
+        if data.error_code is not None:
+            repository["error_code"] = data.error_code
+        if data.error_summary is not None:
+            repository["error_summary"] = data.error_summary
+        return repository
 
     def read_issue_records(self) -> list[dict[str, object]]:
+        return list(self.read_repository_core_data({}).issues)
+
+    def read_repository_core_data(
+        self, scope: dict[str, object] | None = None
+    ) -> GitHubRepositoryCoreData:
+        repository_ref = _scope_repository_ref(scope)
         if self.scenario == FakeScenario.UNKNOWN:
-            return [{"external_id": "github-issue-unknown", "status": "unknown"}]
+            return GitHubRepositoryCoreData(
+                repository={
+                    "id": "github-repository-unknown",
+                    "full_name": repository_ref,
+                    "name": repository_ref.split("/")[-1],
+                    "status": "unknown",
+                    "archived": False,
+                },
+                issues=[
+                    {
+                        "external_id": "github-issue-unknown",
+                        "status": "unknown",
+                    }
+                ],
+                fetch_status="partial",
+                repository_ref=repository_ref,
+            )
         if self.scenario == FakeScenario.PARTIAL_FAILURE:
-            return [{"status": "failed", "error_class": "permission_denied"}]
-        return [
-            {
-                "external_id": "issue-1",
-                "number": 1,
-                "title": "Fix flaky test",
-                "status": "open",
-                "author_external_id": "contributor-a",
-                "occurred_at": "2026-07-22T12:00:00+00:00",
-                "html_url": "https://example.test/issues/1",
+            return GitHubRepositoryCoreData(
+                repository={
+                    "id": "github-repository-example",
+                    "full_name": repository_ref,
+                    "name": repository_ref.split("/")[-1],
+                    "status": "failed",
+                    "error_class": "permission_denied",
+                    "archived": False,
+                },
+                issues=[
+                    {
+                        "status": "failed",
+                        "error_class": "permission_denied",
+                    }
+                ],
+                fetch_status="failed",
+                error_code="permission_denied",
+                error_summary="permission denied",
+                repository_ref=repository_ref,
+            )
+        return GitHubRepositoryCoreData(
+            repository={
+                "id": "github-repository-example",
+                "full_name": repository_ref,
+                "name": repository_ref.split("/")[-1],
+                "title": repository_ref,
+                "status": "success",
+                "archived": False,
+                "default_branch": "main",
+                "open_issues_count": 2,
+                "closed_issues_count": 1,
+                "pushed_at": "2026-07-24T12:00:00+00:00",
             },
-            {
-                "external_id": "issue-pr-2",
-                "number": 2,
-                "title": "Add report export",
-                "status": "open",
-                "author_external_id": "contributor-b",
-                "pull_request": True,
-                "occurred_at": "2026-07-23T12:00:00+00:00",
-                "html_url": "https://example.test/pull/2",
-            },
-            {
-                "external_id": "issue-3",
-                "number": 3,
-                "title": "Update docs",
-                "status": "closed",
-                "author_external_id": "contributor-c",
-                "occurred_at": "2026-07-24T12:00:00+00:00",
-                "html_url": "https://example.test/issues/3",
-            },
-        ]
+            issues=[
+                {
+                    "external_id": "issue-1",
+                    "number": 1,
+                    "title": "Fix flaky test",
+                    "status": "open",
+                    "author_external_id": "contributor-a",
+                    "occurred_at": "2026-07-22T12:00:00+00:00",
+                    "html_url": "https://example.test/issues/1",
+                },
+                {
+                    "external_id": "issue-pr-2",
+                    "number": 2,
+                    "title": "Add report export",
+                    "status": "open",
+                    "author_external_id": "contributor-b",
+                    "pull_request": True,
+                    "occurred_at": "2026-07-23T12:00:00+00:00",
+                    "html_url": "https://example.test/pull/2",
+                },
+                {
+                    "external_id": "issue-3",
+                    "number": 3,
+                    "title": "Update docs",
+                    "status": "closed",
+                    "author_external_id": "contributor-c",
+                    "occurred_at": "2026-07-24T12:00:00+00:00",
+                    "html_url": "https://example.test/issues/3",
+                },
+            ],
+            pull_requests=[
+                {
+                    "external_id": "pr-2",
+                    "number": 2,
+                    "title": "Add report export",
+                    "status": "open",
+                    "author_external_id": "contributor-b",
+                    "occurred_at": "2026-07-23T12:00:00+00:00",
+                    "html_url": "https://example.test/pull/2",
+                    "head": {"label": "feature/report-export", "ref": "feature/report-export"},
+                    "base": {"ref": "main"},
+                    "latest_review_state": "approved",
+                    "review_count": 2,
+                }
+            ],
+            commits=[
+                {
+                    "external_id": "commit-aaa111",
+                    "sha": "aaa111",
+                    "message": "Refine report metrics",
+                    "status": "complete",
+                    "author_external_id": "contributor-a",
+                    "occurred_at": "2026-07-22T08:00:00+00:00",
+                    "html_url": "https://example.test/commit/aaa111",
+                    "commit": {
+                        "message": "Refine report metrics\n\nKeep calculations stable.",
+                        "author": {
+                            "login": "contributor-a",
+                            "date": "2026-07-22T08:00:00+00:00",
+                        },
+                    },
+                },
+                {
+                    "external_id": "commit-bbb222",
+                    "sha": "bbb222",
+                    "message": "Add review aggregation",
+                    "status": "complete",
+                    "author_external_id": "contributor-b",
+                    "occurred_at": "2026-07-23T08:00:00+00:00",
+                    "html_url": "https://example.test/commit/bbb222",
+                    "commit": {
+                        "message": "Add review aggregation\n\nCapture latest review state.",
+                        "author": {
+                            "login": "contributor-b",
+                            "date": "2026-07-23T08:00:00+00:00",
+                        },
+                    },
+                },
+            ],
+            reviews=[
+                {
+                    "external_id": "review-1",
+                    "id": 101,
+                    "state": "APPROVED",
+                    "title": "PR #2: Add report export",
+                    "author_external_id": "reviewer-a",
+                    "occurred_at": "2026-07-23T13:00:00+00:00",
+                    "submitted_at": "2026-07-23T13:00:00+00:00",
+                    "html_url": "https://example.test/pull/2#review-1",
+                    "pull_request_number": 2,
+                    "pull_request": {"number": 2, "title": "Add report export"},
+                    "user": {"login": "reviewer-a"},
+                },
+                {
+                    "external_id": "review-2",
+                    "id": 102,
+                    "state": "COMMENTED",
+                    "title": "PR #2: Add report export",
+                    "author_external_id": "reviewer-b",
+                    "occurred_at": "2026-07-23T14:00:00+00:00",
+                    "submitted_at": "2026-07-23T14:00:00+00:00",
+                    "html_url": "https://example.test/pull/2#review-2",
+                    "pull_request_number": 2,
+                    "pull_request": {"number": 2, "title": "Add report export"},
+                    "user": {"login": "reviewer-b"},
+                },
+            ],
+            milestones=[
+                {
+                    "external_id": "milestone-1",
+                    "id": 201,
+                    "number": 1,
+                    "title": "Release 1.0",
+                    "status": "open",
+                    "occurred_at": "2026-07-24T10:00:00+00:00",
+                    "html_url": "https://example.test/milestones/1",
+                    "description": "Ship the first release",
+                    "open_issues": 2,
+                    "closed_issues": 1,
+                    "creator": {"login": "pm-a"},
+                }
+            ],
+            contributors=[
+                {
+                    "external_id": "contributor-a",
+                    "login": "contributor-a",
+                    "name": "Contributor A",
+                    "status": "active",
+                    "contributions": 12,
+                    "html_url": "https://example.test/users/contributor-a",
+                },
+                {
+                    "external_id": "contributor-b",
+                    "login": "contributor-b",
+                    "name": "Contributor B",
+                    "status": "active",
+                    "contributions": 7,
+                    "html_url": "https://example.test/users/contributor-b",
+                },
+            ],
+            repository_ref=repository_ref,
+        )
 
 
 class FakeLLMProvider:
@@ -208,3 +376,17 @@ def _fetch_status(records: list[dict[str, object]]) -> str:
     if "unknown" in statuses:
         return "partial"
     return "complete"
+
+
+def _scope_repository_ref(scope: dict[str, object] | None) -> str:
+    if scope is None:
+        return "github-repository-example"
+    selected = scope.get("selected_repository_ids")
+    if isinstance(selected, list) and selected and isinstance(selected[0], str):
+        candidate = selected[0].strip()
+        if candidate:
+            return candidate
+    repository_ref = scope.get("repository_ref")
+    if isinstance(repository_ref, str) and repository_ref.strip():
+        return repository_ref.strip()
+    return "github-repository-example"

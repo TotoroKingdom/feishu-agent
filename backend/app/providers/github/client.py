@@ -143,6 +143,70 @@ class GitHubClient:
             if isinstance(item, Mapping) and _within_window(item, since=since, until=until)
         ]
 
+    def get_repository(self, owner: str, repo: str) -> dict[str, object]:
+        response = self._send("GET", self._build_url(f"/repos/{owner}/{repo}"))
+        payload = _decode_json(response.body)
+        if not isinstance(payload, Mapping):
+            raise GitHubServiceError(response.status_code, "unexpected GitHub repository payload")
+        return dict(payload)
+
+    def list_repository_commits(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        per_page: int = 100,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[dict[str, object]]:
+        items = self._collect_pages(
+            f"/repos/{owner}/{repo}/commits",
+            params=_build_params(per_page=per_page, since=since),
+        )
+        return [
+            item
+            for item in items
+            if isinstance(item, Mapping) and _within_commit_window(item, since=since, until=until)
+        ]
+
+    def list_pull_request_reviews(
+        self,
+        owner: str,
+        repo: str,
+        pull_number: int | str,
+        *,
+        per_page: int = 100,
+    ) -> list[dict[str, object]]:
+        return self._collect_pages(
+            f"/repos/{owner}/{repo}/pulls/{pull_number}/reviews",
+            params={"per_page": per_page},
+        )
+
+    def list_repository_milestones(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        state: str = "all",
+        per_page: int = 100,
+    ) -> list[dict[str, object]]:
+        return self._collect_pages(
+            f"/repos/{owner}/{repo}/milestones",
+            params=_build_params(state=state, per_page=per_page),
+        )
+
+    def list_repository_contributors(
+        self,
+        owner: str,
+        repo: str,
+        *,
+        per_page: int = 100,
+    ) -> list[dict[str, object]]:
+        return self._collect_pages(
+            f"/repos/{owner}/{repo}/contributors",
+            params={"per_page": per_page},
+        )
+
     def _collect_pages(
         self, path: str, *, params: Mapping[str, object] | None = None
     ) -> list[dict[str, object]]:
@@ -198,11 +262,14 @@ def _query_value(value: object) -> object:
 
 def _build_params(
     *,
-    state: str,
+    state: str | None = None,
     per_page: int,
     since: datetime | None = None,
 ) -> dict[str, object]:
-    params: dict[str, object] = {"state": state, "per_page": per_page}
+    if state is not None:
+        params: dict[str, object] = {"state": state, "per_page": per_page}
+    else:
+        params = {"per_page": per_page}
     if since is not None:
         params["since"] = since.astimezone(UTC).isoformat()
     return params
@@ -278,6 +345,22 @@ def _within_window(
     return True
 
 
+def _within_commit_window(
+    item: Mapping[str, object],
+    *,
+    since: datetime | None,
+    until: datetime | None,
+) -> bool:
+    boundary = _pick_commit_datetime(item)
+    if boundary is None:
+        return True
+    if since is not None and boundary < since.astimezone(UTC):
+        return False
+    if until is not None and boundary >= until.astimezone(UTC):
+        return False
+    return True
+
+
 def _pick_datetime(item: Mapping[str, object]) -> datetime | None:
     for key in ("updated_at", "created_at", "closed_at"):
         candidate = item.get(key)
@@ -288,3 +371,19 @@ def _pick_datetime(item: Mapping[str, object]) -> datetime | None:
                 continue
             return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
+
+
+def _pick_commit_datetime(item: Mapping[str, object]) -> datetime | None:
+    commit = item.get("commit")
+    if isinstance(commit, Mapping):
+        for key in ("committer", "author"):
+            nested = commit.get(key)
+            if isinstance(nested, Mapping):
+                candidate = nested.get("date")
+                if isinstance(candidate, str) and candidate:
+                    try:
+                        parsed = datetime.fromisoformat(candidate.replace("Z", "+00:00"))
+                    except ValueError:
+                        continue
+                    return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+    return _pick_datetime(item)

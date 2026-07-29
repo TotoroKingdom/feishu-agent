@@ -11,9 +11,9 @@ from app.agent.runtime import WorkflowRuntime
 from app.collection.service import CollectionProviders, CollectionService
 from app.db.models import (
     Base,
+    MetricSnapshot,
     NormalizedEntity,
     NormalizedSnapshot,
-    MetricSnapshot,
     Project,
     ReportRun,
     SourceDataBatch,
@@ -86,7 +86,9 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
+    waiting_publish = runtime.resume(
+        run_id, _approval_payload(started.snapshot, "approve_generation")
+    )
     result = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
     snapshot = result.snapshot
 
@@ -129,8 +131,8 @@ def test_happy_path_collects_normalizes_and_validates() -> None:
         assert len(source_batches) == 2
         assert {batch.fetch_status for batch in source_batches} == {"complete"}
         assert len(normalized_snapshots) == 1
-        assert normalized_snapshots[0].entity_count == 4
-        assert len(normalized_entities) == 4
+        assert normalized_snapshots[0].entity_count == 13
+        assert len(normalized_entities) == 13
         assert len(validation_results) == 1
         assert validation_results[0].validation_pass is True
         assert validation_results[0].data_quality_status == "complete"
