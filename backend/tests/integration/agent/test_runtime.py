@@ -61,16 +61,24 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
     assert second.checkpoint_id == first.checkpoint_id
     assert snapshot is not None
     assert snapshot.values["current_stage"] == "waiting_confirmation"
-    assert resumed.status == "approved"
+    assert resumed.status == "completed"
     assert completed is not None
-    assert completed.values["current_stage"] == "approved"
+    assert completed.values["current_stage"] == "validated"
+    assert completed.values["current_node"] == "complete_run"
+    assert isinstance(completed.values["source_batch_refs"], list)
+    assert len(completed.values["source_batch_refs"]) == 2
+    assert all(isinstance(item, str) and item for item in completed.values["source_batch_refs"])
+    assert isinstance(completed.values["normalized_snapshot_ref"], str)
+    assert completed.values["normalized_snapshot_ref"]
+    assert isinstance(completed.values["validation_result_ref"], str)
+    assert completed.values["validation_result_ref"]
 
     with factory() as session:
         row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         assert row is not None
         assert row.thread_id == thread_id_for_run(run_id)
-        assert row.status == "approved"
-        assert row.current_stage == "approved"
+        assert row.status == "completed"
+        assert row.current_stage == "validated"
         assert row.scope_revision == 1
 
 
@@ -94,4 +102,4 @@ def test_worker_restart_finds_waiting_runs_and_resumes_them() -> None:
             "actor_id": "local-demo",
         },
     )
-    assert resumed.status == "approved"
+    assert resumed.status == "completed"

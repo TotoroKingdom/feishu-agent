@@ -73,11 +73,16 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                     "actor_id": "local-demo",
                 },
             )
-            assert resumed.status == "approved"
+            assert resumed.status == "completed"
 
             snapshot = restarted_worker.inspect(run_id)
             assert snapshot is not None
-            assert snapshot.values["current_stage"] == "approved"
+            assert snapshot.values["current_stage"] == "validated"
+            assert snapshot.values["current_node"] == "complete_run"
+            assert isinstance(snapshot.values["source_batch_refs"], list)
+            assert len(snapshot.values["source_batch_refs"]) == 2
+            assert snapshot.values["normalized_snapshot_ref"]
+            assert snapshot.values["validation_result_ref"]
 
             with factory() as session:
                 run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -88,9 +93,10 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 ).all()
                 assert run_row is not None
                 assert run_row.thread_id == thread_id
-                assert run_row.status == "approved"
+                assert run_row.status == "completed"
+                assert run_row.current_stage == "validated"
                 assert run_row.scope_revision == 1
-                assert [row.to_status for row in history_rows] == ["waiting", "approved"]
+                assert [row.to_status for row in history_rows] == ["waiting", "completed"]
         finally:
             saver.delete_thread(thread_id)
             with factory() as session:

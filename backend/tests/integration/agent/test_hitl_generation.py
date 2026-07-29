@@ -60,8 +60,10 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
 
     assert started.status == "waiting"
     assert started.snapshot.values["current_stage"] == "waiting_confirmation"  # type: ignore[index]
-    assert first_resume.status == "approved"
-    assert duplicate_resume.status == "approved"
+    assert first_resume.status == "completed"
+    assert first_resume.snapshot.values["current_stage"] == "validated"  # type: ignore[index]
+    assert first_resume.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
+    assert duplicate_resume.status == "completed"
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
@@ -70,8 +72,8 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
         ).all()
 
         assert run_row is not None
-        assert run_row.status == "approved"
-        assert run_row.current_stage == "approved"
+        assert run_row.status == "completed"
+        assert run_row.current_stage == "validated"
         assert run_row.scope_revision == 1
         assert len(approvals) == 1
         assert approvals[0].status == "approved"

@@ -16,11 +16,27 @@ class FakeFeishuProvider:
             return [{"external_id": "feishu-record-unknown", "status": "unknown"}]
         if self.scenario == FakeScenario.PARTIAL_FAILURE:
             return [
-                {"external_id": "feishu-record-001", "status": "success"},
+                {
+                    "external_id": "feishu-record-001",
+                    "title": "Milestone ready",
+                    "status": "success",
+                    "occurred_at": "2026-07-22T09:00:00+00:00",
+                },
                 {"status": "failed", "error_class": "field_missing"},
             ]
         return [
-            {"external_id": "feishu-record-001", "title": "Milestone ready", "status": "success"}
+            {
+                "external_id": "feishu-record-001",
+                "title": "Milestone ready",
+                "status": "success",
+                "occurred_at": "2026-07-22T09:00:00+00:00",
+            },
+            {
+                "external_id": "feishu-record-002",
+                "title": "Team update",
+                "status": "success",
+                "occurred_at": "2026-07-23T09:00:00+00:00",
+            },
         ]
 
 
@@ -39,6 +55,39 @@ class FakeGitHubProvider:
             "issues": 3,
             "pull_requests": 1,
         }
+
+    def read_issue_records(self) -> list[dict[str, object]]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return [{"external_id": "github-issue-unknown", "status": "unknown"}]
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return [{"status": "failed", "error_class": "permission_denied"}]
+        return [
+            {
+                "external_id": "issue-1",
+                "number": 1,
+                "title": "Fix flaky test",
+                "status": "open",
+                "occurred_at": "2026-07-22T12:00:00+00:00",
+                "html_url": "https://example.test/issues/1",
+            },
+            {
+                "external_id": "issue-pr-2",
+                "number": 2,
+                "title": "Add report export",
+                "status": "open",
+                "pull_request": True,
+                "occurred_at": "2026-07-23T12:00:00+00:00",
+                "html_url": "https://example.test/pull/2",
+            },
+            {
+                "external_id": "issue-3",
+                "number": 3,
+                "title": "Update docs",
+                "status": "closed",
+                "occurred_at": "2026-07-24T12:00:00+00:00",
+                "html_url": "https://example.test/issues/3",
+            },
+        ]
 
 
 class FakeLLMProvider:

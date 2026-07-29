@@ -42,6 +42,8 @@ _ALLOWED_SCOPE_OVERRIDE_KEYS = {
     "timezone",
     "user_instructions",
 }
+_DEFAULT_FEISHU_RESOURCE_ID = "feishu-table-example"
+_DEFAULT_GITHUB_RESOURCE_ID = "github-repository-example"
 
 
 def canonical_json_hash(payload: Mapping[str, object]) -> str:
@@ -254,11 +256,24 @@ def _build_base_scope(state: Mapping[str, object]) -> dict[str, object]:
         )
         read_plan = _coerce_list(scope_state.get("read_plan"), "read_plan")
     else:
-        selected_repository_ids = []
-        feishu_resource_refs = []
+        selected_repository_ids = [_DEFAULT_GITHUB_RESOURCE_ID]
+        feishu_resource_refs = [_DEFAULT_FEISHU_RESOURCE_ID]
         user_instructions = ""
-        expected_publish_group_ref = None
-        read_plan = []
+        expected_publish_group_ref = "feishu-publish-group-example"
+        read_plan = [
+            {
+                "source_type": "feishu_bitable",
+                "source_resource_id": _DEFAULT_FEISHU_RESOURCE_ID,
+                "entity_type": "feishu_record",
+                "page_no": 1,
+            },
+            {
+                "source_type": "github",
+                "source_resource_id": _DEFAULT_GITHUB_RESOURCE_ID,
+                "entity_type": "github_issue",
+                "page_no": 1,
+            },
+        ]
 
     return {
         "period_key": period_key,

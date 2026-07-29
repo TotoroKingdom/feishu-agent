@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from uuid import uuid4
 
-from sqlalchemy import JSON, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
+from sqlalchemy import Boolean, JSON, Date, DateTime, ForeignKey, Integer, String, UniqueConstraint, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -102,3 +102,152 @@ class HumanApproval(Base):
     decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class SourceDataBatch(Base):
+    __tablename__ = "source_data_batches"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "source_type",
+            "source_resource_id",
+            "entity_type",
+            "page_no",
+            "payload_hash",
+            name="uq_source_data_batches_identity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    source_type: Mapped[str] = mapped_column(String(24))
+    source_resource_id: Mapped[str] = mapped_column(String(36))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    page_no: Mapped[int] = mapped_column(Integer)
+    cursor: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    period_start: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    period_end: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    payload: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    payload_hash: Mapped[str] = mapped_column(String(64))
+    record_count: Mapped[int] = mapped_column(Integer)
+    schema_version: Mapped[str] = mapped_column(String(32))
+    fetch_status: Mapped[str] = mapped_column(String(20))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NormalizedSnapshot(Base):
+    __tablename__ = "normalized_snapshots"
+    __table_args__ = (UniqueConstraint("run_id", "content_hash", name="uq_normalized_snapshots"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    source_batch_set_hash: Mapped[str] = mapped_column(String(64))
+    mapping_revision: Mapped[str] = mapped_column(String(32))
+    normalizer_version: Mapped[str] = mapped_column(String(32))
+    entity_count: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(16))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class NormalizedEntity(Base):
+    __tablename__ = "normalized_entities"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id",
+            "source_type",
+            "source_resource_id",
+            "entity_type",
+            "external_id",
+            "content_hash",
+            name="uq_normalized_entities_identity",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    normalized_snapshot_id: Mapped[str] = mapped_column(
+        ForeignKey("normalized_snapshots.id", ondelete="CASCADE"), index=True
+    )
+    source_type: Mapped[str] = mapped_column(String(24))
+    entity_type: Mapped[str] = mapped_column(String(32))
+    source_resource_id: Mapped[str] = mapped_column(String(36))
+    external_id: Mapped[str] = mapped_column(String(128))
+    repository_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    state: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    author_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    assignee_external_ids: Mapped[list[str]] = mapped_column(JSON, default=list)
+    labels: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    milestone_external_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at_external: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at_external: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    closed_at_external: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    occurred_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_batch_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    raw_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    attributes: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class ValidationResult(Base):
+    __tablename__ = "validation_results"
+    __table_args__ = (UniqueConstraint("run_id", "input_snapshot_hash", name="uq_validation_results"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    validation_pass: Mapped[bool] = mapped_column(Boolean, default=False)
+    data_quality_status: Mapped[str] = mapped_column(String(24))
+    rule_set_version: Mapped[str] = mapped_column(String(32))
+    critical_count: Mapped[int] = mapped_column(Integer)
+    warning_count: Mapped[int] = mapped_column(Integer)
+    missing_items: Mapped[list[str]] = mapped_column(JSON, default=list)
+    conflicts: Mapped[list[dict[str, object]]] = mapped_column(JSON, default=list)
+    warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
+    input_snapshot_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ToolExecution(Base):
+    __tablename__ = "tool_executions"
+    __table_args__ = (
+        UniqueConstraint("run_id", "idempotency_key", "attempt", name="uq_tool_executions_attempt"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    node_execution_id: Mapped[str] = mapped_column(String(128))
+    tool_name: Mapped[str] = mapped_column(String(128))
+    tool_version: Mapped[str] = mapped_column(String(32))
+    attempt: Mapped[int] = mapped_column(Integer)
+    idempotency_key: Mapped[str] = mapped_column(String(128))
+    request_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    result_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    data_ref: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    provider_request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    status: Mapped[str] = mapped_column(String(24))
+    error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    retryable: Mapped[bool] = mapped_column(Boolean, default=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)

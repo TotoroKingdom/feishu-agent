@@ -34,6 +34,10 @@ class WorkflowState(TypedDict, total=False):
     user_instructions: str
     expected_publish_group_ref: str | None
     read_plan: list[object]
+    source_batch_refs: list[str]
+    normalized_snapshot_ref: str | None
+    validation_result_ref: str | None
+    metrics_ref: str | None
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
@@ -73,6 +77,10 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "current_node": "load_project_config",
         "scope_revision": 1,
         "approval_revision": 0,
+        "source_batch_refs": [],
+        "normalized_snapshot_ref": None,
+        "validation_result_ref": None,
+        "metrics_ref": None,
         "scope": {},
         "approval": {},
         "control": {

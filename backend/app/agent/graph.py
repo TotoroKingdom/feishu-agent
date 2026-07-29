@@ -7,6 +7,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from app.agent.state import WorkflowState, ensure_state_is_safe
 from app.approvals import (
     APPROVAL_ACTION_APPROVE,
     APPROVAL_ACTION_CANCEL,
@@ -17,19 +18,25 @@ from app.approvals import (
     GenerationApprovalStore,
     build_generation_scope,
 )
-from app.agent.state import WorkflowState, ensure_state_is_safe
+from app.collection.service import CollectionService, CollectionStageOutcome
 
 
 def build_workflow_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     approval_store: GenerationApprovalStore | None = None,
+    collection_service: CollectionService | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
+    collector = collection_service or _MissingCollectionService()
     builder = StateGraph(WorkflowState)
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
     builder.add_node("request_generation_confirmation", _request_generation_confirmation(store))
     builder.add_node("wait_generation_confirmation", _wait_generation_confirmation(store))
+    builder.add_node("collect_feishu_data", _collect_feishu_data(collector))
+    builder.add_node("collect_github_data", _collect_github_data(collector))
+    builder.add_node("normalize_data", _normalize_data(collector))
+    builder.add_node("validate_data", _validate_data(collector))
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
@@ -39,9 +46,35 @@ def build_workflow_graph(
         _generation_approval_route,
         {
             "build_generation_scope": "build_generation_scope",
+            "collect_feishu_data": "collect_feishu_data",
             END: END,
         },
     )
+    builder.add_conditional_edges(
+        "collect_feishu_data",
+        _collection_route,
+        {
+            "collect_github_data": "collect_github_data",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "collect_github_data",
+        _collection_route,
+        {
+            "normalize_data": "normalize_data",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "normalize_data",
+        _collection_route,
+        {
+            "validate_data": "validate_data",
+            END: END,
+        },
+    )
+    builder.add_edge("validate_data", END)
     return builder.compile(checkpointer=checkpointer, name="weekly_report.v1")
 
 
@@ -213,16 +246,14 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
             action=action,
             actor_id=actor_id,
         )
-        status_by_action = {
-            APPROVAL_ACTION_APPROVE: "approved",
-            APPROVAL_ACTION_CONTINUE: "approved",
-            APPROVAL_ACTION_CANCEL: "cancelled",
-            APPROVAL_ACTION_LEGACY_CANCEL: "cancelled",
-            APPROVAL_ACTION_REJECT: "rejected",
-        }
-        current_stage = status_by_action[action]
-        current_node = "complete_run"
-        patch: dict[str, object] = {
+        if action in {APPROVAL_ACTION_CANCEL, APPROVAL_ACTION_LEGACY_CANCEL}:
+            current_stage = "cancelled"
+        elif action == APPROVAL_ACTION_REJECT:
+            current_stage = "rejected"
+        else:
+            current_stage = "collecting_feishu_data"
+
+        return {
             "requested_action": action,
             "approval": {
                 "active_approval_ref": approval["active_approval_ref"],
@@ -236,7 +267,9 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
                 "requested_from": approval["requested_from"],
             },
             "current_stage": current_stage,
-            "current_node": current_node,
+            "current_node": "collect_feishu_data"
+            if current_stage == "collecting_feishu_data"
+            else "complete_run",
             "resume_from": "wait_generation_confirmation",
             "control": {
                 "requested_action": action,
@@ -246,7 +279,106 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
             },
             "cancel_requested": decision.status == "cancelled",
         }
-        return patch
+
+    return _node
+
+
+def _collect_feishu_data(collector: CollectionService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        outcome = collector.collect_feishu_data(state["run_id"], _require_scope(state))
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "collect_feishu_data",
+                "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "collecting_github_data",
+            "current_node": "collect_github_data",
+            "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _collect_github_data(collector: CollectionService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        outcome = collector.collect_github_data(state["run_id"], _require_scope(state))
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "collect_github_data",
+                "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "normalizing_data",
+            "current_node": "normalize_data",
+            "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _normalize_data(collector: CollectionService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        outcome = collector.normalize_data(state["run_id"], _require_scope(state))
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "normalize_data",
+                "normalized_snapshot_ref": state.get("normalized_snapshot_ref"),
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "validating_data",
+            "current_node": "validate_data",
+            "normalized_snapshot_ref": outcome.normalized_snapshot_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
+
+    return _node
+
+
+def _validate_data(collector: CollectionService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        normalized_snapshot_ref = state.get("normalized_snapshot_ref")
+        if not isinstance(normalized_snapshot_ref, str) or not normalized_snapshot_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "validate_data",
+                "error_code": "NORMALIZED_SNAPSHOT_MISSING",
+                "error_summary": "Normalized snapshot missing from state",
+            }
+        outcome = collector.validate_data(state["run_id"], normalized_snapshot_ref)
+        if outcome.status == "blocked":
+            return {
+                "current_stage": "blocked",
+                "current_node": "validate_data",
+                "validation_result_ref": outcome.validation_result_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "current_stage": "validated",
+            "current_node": "complete_run",
+            "validation_result_ref": outcome.validation_result_ref,
+            "error_code": None,
+            "error_summary": None,
+        }
 
     return _node
 
@@ -257,6 +389,17 @@ def _generation_approval_route(state: WorkflowState) -> str:
         return END
     if requested_action == APPROVAL_ACTION_MODIFY:
         return "build_generation_scope"
+    if requested_action in {APPROVAL_ACTION_CANCEL, APPROVAL_ACTION_LEGACY_CANCEL, APPROVAL_ACTION_REJECT}:
+        return END
+    return "collect_feishu_data"
+
+
+def _collection_route(state: WorkflowState) -> str:
+    if state.get("current_stage") == "blocked":
+        return END
+    current_node = state.get("current_node")
+    if current_node in {"collect_github_data", "normalize_data", "validate_data"}:
+        return str(current_node)
     return END
 
 
@@ -376,9 +519,38 @@ def _as_string(value: object, field_name: str) -> str:
     raise ValueError(f"{field_name} must be a string")
 
 
+def _append_unique(existing: object, new_value: str | None) -> list[str]:
+    items: list[str] = []
+    if isinstance(existing, list):
+        items.extend(item for item in existing if isinstance(item, str))
+    if isinstance(new_value, str) and new_value:
+        items.append(new_value)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped
+
+
 class _MissingGenerationApprovalStore:
     def ensure_pending_generation_approval(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
 
     def mark_generation_approval_decision(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
+
+
+class _MissingCollectionService:
+    def collect_feishu_data(self, *_: object, **__: object) -> CollectionStageOutcome:
+        raise RuntimeError("collection_service is required")
+
+    def collect_github_data(self, *_: object, **__: object) -> CollectionStageOutcome:
+        raise RuntimeError("collection_service is required")
+
+    def normalize_data(self, *_: object, **__: object) -> CollectionStageOutcome:
+        raise RuntimeError("collection_service is required")
+
+    def validate_data(self, *_: object, **__: object) -> CollectionStageOutcome:
+        raise RuntimeError("collection_service is required")
