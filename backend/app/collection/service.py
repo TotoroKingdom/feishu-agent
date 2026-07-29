@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal, cast
 
 from sqlalchemy import select
@@ -27,11 +27,14 @@ from app.domain.source import (
     SOURCE_TYPE_FEISHU_BITABLE,
     SOURCE_TYPE_GITHUB,
     VALIDATION_RULE_SET_VERSION,
-    ValidationOutcome,
-    build_batch_set_hash,
     canonical_json_hash,
 )
 from app.providers.fake import FakeFeishuProvider, FakeGitHubProvider
+from app.providers.feishu.bitable import (
+    FeishuBitableError,
+    FeishuBitableReadPage,
+    FeishuBitableSource,
+)
 from app.reports.normalization import (
     build_snapshot_content_hash,
     build_source_batch_set_hash_from_batches,
@@ -55,7 +58,7 @@ class CollectionStageOutcome:
 
 @dataclass(slots=True)
 class CollectionProviders:
-    feishu: FakeFeishuProvider = field(default_factory=FakeFeishuProvider)
+    feishu: FeishuBitableSource = field(default_factory=FakeFeishuProvider)
     github: FakeGitHubProvider = field(default_factory=FakeGitHubProvider)
 
 
@@ -68,48 +71,105 @@ class CollectionService:
         self._session_factory = session_factory
         self._providers = providers or CollectionProviders()
 
-    def collect_feishu_data(self, run_id: str, scope: Mapping[str, object]) -> CollectionStageOutcome:
+    def collect_feishu_data(
+        self, run_id: str, scope: Mapping[str, object]
+    ) -> CollectionStageOutcome:
         with self._session_factory() as session:
             run = self._load_run(session, run_id)
-            records = self._providers.feishu.read_records()
-            fetch_status = self._fetch_status(records)
-            payload = {"records": records}
-            source_resource_id = _first_or_default(scope.get("feishu_resource_refs"), DEFAULT_FEISHU_RESOURCE_ID)
-            batch = self._upsert_source_batch(
-                session,
-                run=run,
-                source_type=SOURCE_TYPE_FEISHU_BITABLE,
-                source_resource_id=source_resource_id,
-                entity_type=ENTITY_TYPE_FEISHU_RECORD,
-                page_no=1,
-                payload=payload,
-                record_count=len(records),
-                fetch_status=fetch_status,
+            source_resource_id = _first_or_default(
+                scope.get("feishu_resource_refs"), DEFAULT_FEISHU_RESOURCE_ID
             )
+            try:
+                pages = list(self._providers.feishu.read_pages(scope))
+            except FeishuBitableError as exc:
+                self._record_tool_execution(
+                    session,
+                    run_id=run_id,
+                    node_execution_id="collect_feishu_data",
+                    tool_name="feishu.read_records",
+                    request_summary={"source_resource_id": source_resource_id},
+                    result_summary={"error": type(exc).__name__, "message": str(exc)},
+                    data_ref=None,
+                    status="failed",
+                    error_class=type(exc).__name__,
+                    error_code="feishu_bitable_read_failed",
+                    retryable=False,
+                )
+                session.commit()
+                return CollectionStageOutcome(
+                    status="blocked",
+                    error_code=_map_feishu_error_code(exc),
+                    error_summary=str(exc),
+                )
+
+            if not pages:
+                pages = [
+                    FeishuBitableReadPage(
+                        resource_id=source_resource_id,
+                        page_no=1,
+                        schema_hash="empty-schema-v1",
+                        records=[],
+                        has_more=False,
+                        fetch_status="complete",
+                    )
+                ]
+
+            overall_status = "complete"
+            first_batch_ref: str | None = None
+            total_records = 0
+            total_pages = 0
+            for page in pages:
+                total_pages += 1
+                total_records += len(page.records)
+                batch = self._upsert_source_batch(
+                    session,
+                    run=run,
+                    source_type=SOURCE_TYPE_FEISHU_BITABLE,
+                    source_resource_id=page.resource_id,
+                    entity_type=ENTITY_TYPE_FEISHU_RECORD,
+                    page_no=page.page_no,
+                    payload=_page_payload(page),
+                    record_count=len(page.records),
+                    fetch_status=page.fetch_status,
+                )
+                if first_batch_ref is None:
+                    first_batch_ref = batch.id
+                if page.fetch_status == "failed":
+                    overall_status = "failed"
+                    break
+                if page.fetch_status == "partial" and overall_status != "failed":
+                    overall_status = "partial"
+
             self._record_tool_execution(
                 session,
                 run_id=run_id,
                 node_execution_id="collect_feishu_data",
                 tool_name="feishu.read_records",
                 request_summary={"source_resource_id": source_resource_id},
-                result_summary={"record_count": len(records), "fetch_status": fetch_status},
-                data_ref=batch.id,
-                status="failed" if fetch_status == "failed" else "success",
-                error_class="source_fetch_failed" if fetch_status == "failed" else None,
-                error_code="source_fetch_failed" if fetch_status == "failed" else None,
+                result_summary={
+                    "record_count": total_records,
+                    "page_count": total_pages,
+                    "fetch_status": overall_status,
+                },
+                data_ref=first_batch_ref,
+                status="failed" if overall_status == "failed" else "success",
+                error_class="source_fetch_failed" if overall_status == "failed" else None,
+                error_code="source_fetch_failed" if overall_status == "failed" else None,
                 retryable=False,
             )
             session.commit()
-            if fetch_status == "failed":
+            if overall_status == "failed":
                 return CollectionStageOutcome(
                     status="blocked",
                     error_code="FEISHU_FETCH_FAILED",
-                    error_summary="Fake Feishu source returned a failed batch",
-                    source_batch_ref=batch.id,
+                    error_summary="Feishu source returned a failed page",
+                    source_batch_ref=first_batch_ref,
                 )
-            return CollectionStageOutcome(status=fetch_status, source_batch_ref=batch.id)
+            return CollectionStageOutcome(status=overall_status, source_batch_ref=first_batch_ref)
 
-    def collect_github_data(self, run_id: str, scope: Mapping[str, object]) -> CollectionStageOutcome:
+    def collect_github_data(
+        self, run_id: str, scope: Mapping[str, object]
+    ) -> CollectionStageOutcome:
         with self._session_factory() as session:
             run = self._load_run(session, run_id)
             records = self._providers.github.read_issue_records()
@@ -154,18 +214,15 @@ class CollectionService:
 
     def normalize_data(self, run_id: str, scope: Mapping[str, object]) -> CollectionStageOutcome:
         with self._session_factory() as session:
-            run = self._load_run(session, run_id)
-            batches = (
-                session.scalars(
-                    select(SourceDataBatch)
-                    .where(
-                        SourceDataBatch.run_id == run_id,
-                        SourceDataBatch.fetch_status != "failed",
-                    )
-                    .order_by(SourceDataBatch.page_no, SourceDataBatch.fetched_at)
+            self._load_run(session, run_id)
+            batches = session.scalars(
+                select(SourceDataBatch)
+                .where(
+                    SourceDataBatch.run_id == run_id,
+                    SourceDataBatch.fetch_status != "failed",
                 )
-                .all()
-            )
+                .order_by(SourceDataBatch.page_no, SourceDataBatch.fetched_at)
+            ).all()
             if not batches:
                 return CollectionStageOutcome(
                     status="blocked",
@@ -399,7 +456,7 @@ class CollectionService:
             record_count=record_count,
             schema_version="minimal.v1",
             fetch_status=fetch_status,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
             expires_at=None,
         )
         session.add(batch)
@@ -441,7 +498,7 @@ class CollectionService:
         )
         if existing is not None:
             return existing
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         record = ToolExecution(
             id=new_id(),
             run_id=run_id,
@@ -466,7 +523,9 @@ class CollectionService:
         session.flush()
         return record
 
-    def _fetch_status(self, records: Sequence[Mapping[str, object]]) -> Literal["complete", "partial", "failed"]:
+    def _fetch_status(
+        self, records: Sequence[Mapping[str, object]]
+    ) -> Literal["complete", "partial", "failed"]:
         if len(records) > MAX_SOURCE_BATCH_RECORDS:
             return "failed"
         statuses = {
@@ -507,8 +566,32 @@ def _entity_to_dict(entity: NormalizedEntity) -> dict[str, object]:
     }
 
 
+def _page_payload(page: FeishuBitableReadPage) -> dict[str, object]:
+    return {
+        "records": list(page.records),
+        "schema_hash": page.schema_hash,
+        "schema_version": page.schema_version,
+        "resource_id": page.resource_id,
+        "page_no": page.page_no,
+        "cursor": page.cursor,
+        "next_cursor": page.next_cursor,
+        "has_more": page.has_more,
+        "fetch_status": page.fetch_status,
+    }
+
+
+def _map_feishu_error_code(error: FeishuBitableError) -> str:
+    if error.__class__.__name__ == "FeishuBitableMissingFieldError":
+        return "FEISHU_FIELD_MISSING"
+    if error.__class__.__name__ == "FeishuBitableTypeChangedError":
+        return "FEISHU_SCHEMA_CHANGED"
+    if error.__class__.__name__ == "FeishuBitableRecordLimitError":
+        return "FEISHU_RECORD_LIMIT_EXCEEDED"
+    return "FEISHU_FETCH_FAILED"
+
+
 def _first_or_default(value: object, default: str) -> str:
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)) and value:
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray) and value:
         first = value[0]
         if isinstance(first, str) and first:
             return first
@@ -525,7 +608,9 @@ def _maybe_string(value: object) -> str | None:
     return str(value)
 
 
-def _normalized_status_from_rows(rows: Sequence[Mapping[str, object]]) -> Literal["complete", "partial", "failed"]:
+def _normalized_status_from_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> Literal["complete", "partial", "failed"]:
     if not rows:
         return "partial"
     warnings = 0

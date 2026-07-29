@@ -5,6 +5,18 @@ from app.providers.feishu.auth import (
     FeishuIdentityResolver,
     FeishuTokenCache,
 )
+from app.providers.feishu.bitable import (
+    FeishuBitableClient,
+    FeishuBitableError,
+    FeishuBitableFieldMapping,
+    FeishuBitableMissingFieldError,
+    FeishuBitableReader,
+    FeishuBitableReadPage,
+    FeishuBitableRecordLimitError,
+    FeishuBitableSchemaMismatchError,
+    FeishuBitableSource,
+    FeishuBitableTypeChangedError,
+)
 from app.providers.feishu.callbacks import (
     FeishuCallbackConflictError,
     FeishuCallbackError,
@@ -35,6 +47,16 @@ from app.providers.feishu.resume import (
 __all__ = [
     "FeishuAccessToken",
     "FeishuActor",
+    "FeishuBitableClient",
+    "FeishuBitableError",
+    "FeishuBitableFieldMapping",
+    "FeishuBitableMissingFieldError",
+    "FeishuBitableReadPage",
+    "FeishuBitableReader",
+    "FeishuBitableRecordLimitError",
+    "FeishuBitableSchemaMismatchError",
+    "FeishuBitableSource",
+    "FeishuBitableTypeChangedError",
     "FeishuAuthError",
     "FeishuAuthorizationError",
     "FeishuCardAction",

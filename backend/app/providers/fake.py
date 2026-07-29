@@ -1,5 +1,7 @@
 from enum import StrEnum
 
+from app.providers.feishu.bitable import FeishuBitableReadPage
+
 
 class FakeScenario(StrEnum):
     HAPPY = "happy"
@@ -11,7 +13,20 @@ class FakeFeishuProvider:
     def __init__(self, scenario: FakeScenario = FakeScenario.HAPPY) -> None:
         self.scenario = scenario
 
-    def read_records(self) -> list[dict[str, object]]:
+    def read_pages(self, scope: dict[str, object] | None = None) -> list[FeishuBitableReadPage]:
+        records = self.read_records(scope)
+        fetch_status = _fetch_status(records)
+        page = FeishuBitableReadPage(
+            resource_id="feishu-table-example",
+            page_no=1,
+            schema_hash="fake-schema-v1",
+            records=records,
+            has_more=False,
+            fetch_status=fetch_status,
+        )
+        return [page]
+
+    def read_records(self, scope: dict[str, object] | None = None) -> list[dict[str, object]]:
         if self.scenario == FakeScenario.UNKNOWN:
             return [{"external_id": "feishu-record-unknown", "status": "unknown"}]
         if self.scenario == FakeScenario.PARTIAL_FAILURE:
@@ -182,3 +197,14 @@ class FakeEffectProvider:
             "url": f"https://fake.feishu.local/archive/{run_id}",
             "provider_request_id": f"fake-request-archive-{run_id}",
         }
+
+
+def _fetch_status(records: list[dict[str, object]]) -> str:
+    statuses = {
+        str(record.get("status") or "").casefold() for record in records if isinstance(record, dict)
+    }
+    if "failed" in statuses:
+        return "failed"
+    if "unknown" in statuses:
+        return "partial"
+    return "complete"
