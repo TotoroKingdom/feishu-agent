@@ -30,7 +30,16 @@ class Project(Base):
     __tablename__ = "projects"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(String(512), nullable=True)
     timezone: Mapped[str] = mapped_column(String(64), default="UTC")
+    default_period_rule: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    default_prompt_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("prompt_versions.id"), nullable=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -40,6 +49,20 @@ class ProjectRepository(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
     external_id: Mapped[str] = mapped_column(String(300))
     provider: Mapped[str] = mapped_column(String(32))
+    owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    repo: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    repository_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    weight: Mapped[int] = mapped_column(Integer, default=100)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    default_branch: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    last_connectivity_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    last_connectivity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     __table_args__ = (
         UniqueConstraint("project_id", "provider", "external_id", name="uq_project_repo"),
     )
@@ -51,7 +74,45 @@ class FeishuResource(Base):
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
     resource_type: Mapped[str] = mapped_column(String(64))
     external_id: Mapped[str] = mapped_column(String(300))
+    name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    schema_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    last_connectivity_status: Mapped[str | None] = mapped_column(String(24), nullable=True)
+    last_connectivity_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
     __table_args__ = (UniqueConstraint("project_id", "resource_type", name="uq_feishu_resource"),)
+
+
+class FeishuFieldMapping(Base):
+    __tablename__ = "feishu_field_mappings"
+    __table_args__ = (
+        UniqueConstraint("resource_id", "logical_field", name="uq_feishu_field_mappings_logical"),
+        UniqueConstraint(
+            "resource_id", "external_field_id", name="uq_feishu_field_mappings_external"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    resource_id: Mapped[str] = mapped_column(
+        ForeignKey("feishu_resources.id", ondelete="CASCADE"), index=True
+    )
+    logical_field: Mapped[str] = mapped_column(String(128))
+    external_field_id: Mapped[str] = mapped_column(String(128))
+    external_field_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    external_field_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    converter: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    required_level: Mapped[str] = mapped_column(String(16))
+    mapping_options: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
 
 
 class EncryptedCredential(Base):
@@ -106,6 +167,64 @@ class ReportRun(Base):
         ForeignKey("publish_plans.id"), nullable=True, index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ModelConfig(Base):
+    __tablename__ = "model_configs"
+    __table_args__ = (UniqueConstraint("scope", name="uq_model_configs_scope"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    scope: Mapped[str] = mapped_column(String(32), default="global")
+    base_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    model: Mapped[str] = mapped_column(String(128))
+    temperature: Mapped[float] = mapped_column(Float, default=0.0)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=30)
+    max_retries: Mapped[int] = mapped_column(Integer, default=2)
+    stream: Mapped[bool] = mapped_column(Boolean, default=False)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class PromptVersion(Base):
+    __tablename__ = "prompt_versions"
+    __table_args__ = (
+        UniqueConstraint("prompt_type", "version", name="uq_prompt_versions_type_version"),
+        Index("ix_prompt_versions_type_status", "prompt_type", "status"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    prompt_type: Mapped[str] = mapped_column(String(32))
+    version: Mapped[int] = mapped_column(Integer)
+    content: Mapped[str] = mapped_column(String)
+    content_hash: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), default="draft")
+    model_constraints: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    created_by: Mapped[str] = mapped_column(String(128))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AsyncJob(Base):
+    __tablename__ = "async_jobs"
+    __table_args__ = (
+        UniqueConstraint("job_type", "requested_by", "request_hash", name="uq_async_jobs_request"),
+        Index("ix_async_jobs_status_created", "status", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    job_type: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(24))
+    run_id: Mapped[str | None] = mapped_column(ForeignKey("report_runs.id"), nullable=True, index=True)
+    requested_by: Mapped[str] = mapped_column(String(128))
+    request_hash: Mapped[str] = mapped_column(String(64))
+    result_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class RunStatusHistory(Base):

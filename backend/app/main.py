@@ -12,6 +12,20 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
 from app.agent.runtime import WorkflowRuntime
+from app.admin.configuration import (
+    AdminConfigurationService,
+    ConfigurationNotFoundError,
+    FeishuFieldMappingsRequest,
+    FeishuResourceCreateRequest,
+    FeishuResourceUpdateRequest,
+    FeishuSchemaRequest,
+    ModelConfigUpdateRequest,
+    PromptVersionCreateRequest,
+    ProjectUpdateRequest,
+    RepositoryCreateRequest,
+    RepositoryUpdateRequest,
+    RevisionConflictError,
+)
 from app.core.config import Settings
 from app.db.models import Project
 from app.domain.runs import RunCreationService
@@ -175,6 +189,219 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
         return JSONResponse(content={"status": "accepted", "data": result}, status_code=202)
 
+    @application.get("/api/v1/admin/project")
+    def get_admin_project() -> dict[str, object]:
+        return {"data": _configuration_service(application).get_project()}
+
+    @application.put("/api/v1/admin/project")
+    def update_admin_project(payload: ProjectUpdateRequest) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).update_project(payload)
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.get("/api/v1/admin/project/repositories")
+    def list_admin_project_repositories() -> dict[str, object]:
+        return {"data": _configuration_service(application).list_repositories()}
+
+    @application.post("/api/v1/admin/project/repositories", status_code=201)
+    def create_admin_project_repository(payload: RepositoryCreateRequest) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).create_repository(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "CONFLICT", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.patch("/api/v1/admin/project/repositories/{repository_id}")
+    def update_admin_project_repository(
+        repository_id: str, payload: RepositoryUpdateRequest
+    ) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).update_repository(repository_id, payload)
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.delete("/api/v1/admin/project/repositories/{repository_id}")
+    def delete_admin_project_repository(repository_id: str) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).delete_repository(repository_id)
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/project/repositories/{repository_id}/connectivity-test")
+    def test_admin_project_repository_connectivity(repository_id: str) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).test_repository_connectivity(repository_id)
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.get("/api/v1/admin/project/feishu-resources")
+    def list_admin_feishu_resources() -> dict[str, object]:
+        return {"data": _configuration_service(application).list_feishu_resources()}
+
+    @application.post("/api/v1/admin/project/feishu-resources", status_code=201)
+    def create_admin_feishu_resource(payload: FeishuResourceCreateRequest) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).create_feishu_resource(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "CONFLICT", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.patch("/api/v1/admin/project/feishu-resources/{resource_id}")
+    def update_admin_feishu_resource(
+        resource_id: str, payload: FeishuResourceUpdateRequest
+    ) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).update_feishu_resource(resource_id, payload)
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/project/feishu-resources/{resource_id}/schema")
+    def update_admin_feishu_resource_schema(
+        resource_id: str, payload: FeishuSchemaRequest
+    ) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).update_feishu_schema(resource_id, payload)
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.put("/api/v1/admin/project/feishu-resources/{resource_id}/field-mappings")
+    def upsert_admin_feishu_field_mappings(
+        resource_id: str, payload: FeishuFieldMappingsRequest
+    ) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).upsert_feishu_field_mappings(
+                resource_id, payload
+            )
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/project/feishu-resources/{resource_id}/connectivity-test")
+    def test_admin_feishu_resource_connectivity(resource_id: str) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).test_feishu_connectivity(resource_id)
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.get("/api/v1/admin/model-config")
+    def get_admin_model_config() -> dict[str, object]:
+        return {"data": _configuration_service(application).get_model_config()}
+
+    @application.patch("/api/v1/admin/model-config")
+    def patch_admin_model_config(payload: ModelConfigUpdateRequest) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).patch_model_config(payload)
+        except RevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.get("/api/v1/admin/prompts")
+    def list_admin_prompts(type: str) -> dict[str, object]:
+        return {"data": _configuration_service(application).list_prompts(type)}
+
+    @application.post("/api/v1/admin/prompts", status_code=201)
+    def create_admin_prompt(payload: PromptVersionCreateRequest) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).create_prompt(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "CONFLICT", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/prompts/{prompt_version_id}/activate")
+    def activate_admin_prompt(prompt_version_id: str) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).activate_prompt(prompt_version_id)
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/project/connectivity-test", status_code=202)
+    def run_admin_connectivity_test() -> dict[str, object]:
+        return {"data": _configuration_service(application).run_connectivity_job()}
+
+    @application.get("/api/v1/admin/connectivity-jobs/{job_id}")
+    def get_admin_connectivity_job(job_id: str) -> dict[str, object]:
+        try:
+            data = _configuration_service(application).get_async_job(job_id)
+        except ConfigurationNotFoundError as error:
+            raise HTTPException(
+                status_code=404,
+                detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
     @application.post("/api/v1/feishu/events")
     def feishu_events(request: Request, payload: FeishuEventRequest) -> JSONResponse:
         service = _feishu_callback_service(application)
@@ -239,6 +466,10 @@ def _workflow_runtime(application: FastAPI) -> WorkflowRuntime:
         runtime = WorkflowRuntime(_session_factory(application), MemorySaver())
         application.state.workflow_runtime = runtime
     return runtime
+
+
+def _configuration_service(application: FastAPI) -> AdminConfigurationService:
+    return AdminConfigurationService(_session_factory(application), application.state.settings)
 
 
 def _feishu_verification_token(request: Request) -> str | None:

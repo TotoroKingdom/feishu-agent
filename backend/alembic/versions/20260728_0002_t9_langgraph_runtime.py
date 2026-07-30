@@ -39,8 +39,14 @@ def upgrade() -> None:
         sa.text("UPDATE report_runs SET thread_id = 'report-run:' || id WHERE thread_id IS NULL")
     )
 
-    op.alter_column("report_runs", "thread_id", nullable=False)
-    op.create_unique_constraint("uq_report_runs_thread_id", "report_runs", ["thread_id"])
+    bind = op.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        with op.batch_alter_table("report_runs") as batch_op:
+            batch_op.alter_column("thread_id", nullable=False)
+            batch_op.create_unique_constraint("uq_report_runs_thread_id", ["thread_id"])
+    else:
+        op.alter_column("report_runs", "thread_id", nullable=False)
+        op.create_unique_constraint("uq_report_runs_thread_id", "report_runs", ["thread_id"])
 
     op.create_table(
         "run_status_history",
@@ -61,9 +67,19 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index("ix_run_status_history_run_id", table_name="run_status_history")
     op.drop_table("run_status_history")
-    op.drop_constraint("uq_report_runs_thread_id", "report_runs", type_="unique")
-    op.drop_column("report_runs", "current_node")
-    op.drop_column("report_runs", "current_stage")
-    op.drop_column("report_runs", "state_schema_version")
-    op.drop_column("report_runs", "graph_version")
-    op.drop_column("report_runs", "thread_id")
+    bind = op.get_bind()
+    if bind is not None and bind.dialect.name == "sqlite":
+        with op.batch_alter_table("report_runs") as batch_op:
+            batch_op.drop_constraint("uq_report_runs_thread_id", type_="unique")
+            batch_op.drop_column("current_node")
+            batch_op.drop_column("current_stage")
+            batch_op.drop_column("state_schema_version")
+            batch_op.drop_column("graph_version")
+            batch_op.drop_column("thread_id")
+    else:
+        op.drop_constraint("uq_report_runs_thread_id", "report_runs", type_="unique")
+        op.drop_column("report_runs", "current_node")
+        op.drop_column("report_runs", "current_stage")
+        op.drop_column("report_runs", "state_schema_version")
+        op.drop_column("report_runs", "graph_version")
+        op.drop_column("report_runs", "thread_id")
