@@ -402,7 +402,21 @@ class SideEffectExecutor:
                         side_effect_status="executing",
                         next_operation_index=next_operation_index,
                     )
-                if existing_operation.status not in {"running", "claimed"}:
+                if existing_operation.status == "retry_pending":
+                    existing_operation.status = "running"
+                    existing_operation.attempt_count += 1
+                    existing_operation.started_at = now
+                    existing_operation.completed_at = None
+                    existing_operation.updated_at = now
+                    existing_operation.version += 1
+                    existing_operation.external_resource_id = None
+                    existing_operation.external_url = None
+                    existing_operation.provider_request_id = None
+                    existing_operation.verification_status = "not_checked"
+                    existing_operation.last_error_class = None
+                    existing_operation.last_error_summary = None
+                    operation = existing_operation
+                elif existing_operation.status not in {"running", "claimed"}:
                     return SideEffectExecutionOutcome(
                         status="blocked",
                         error_code="SIDE_EFFECT_OPERATION_FAILED",

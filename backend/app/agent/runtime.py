@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, cast
 
 from langgraph.checkpoint.base import CheckpointTuple
@@ -23,8 +24,11 @@ from app.db.models import (
     SideEffectOperation,
 )
 from app.metrics.service import MetricsService
+from app.publishing.generation import build_publish_plan_hash
 from app.publishing.service import PublishingService
 from app.reporting.service import ReportingService
+
+RETRYABLE_ERROR_CLASSES = {"timeout", "rate_limited", "transient_timeout"}
 
 SessionFactory = Callable[[], Session]
 
@@ -193,6 +197,222 @@ class WorkflowRuntime:
                         run_ids.append(plan.run_id)
             return run_ids
 
+    def cancel_run(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        expected_status: str | None = None,
+    ) -> dict[str, object]:
+        with self._session_factory() as session:
+            run = self._load_run(session, run_id)
+            thread_id = self._ensure_run_identity(run)
+            config = self._config(thread_id)
+            snapshot = self._current_snapshot(config)
+            current_stage = (
+                self._current_stage_from_snapshot(snapshot) if snapshot else run.current_stage
+            )
+            current_node = (
+                self._current_node_from_snapshot(snapshot) if snapshot else run.current_node
+            )
+
+            if run.status == "cancelled" or current_stage == "cancelled":
+                return self._command_result(run, stage="cancelled", node="complete_run")
+            if current_stage in {
+                "blocked",
+                "rejected",
+                "partial_failed",
+                "succeeded",
+            } or run.status in {
+                "blocked",
+                "rejected",
+                "partial_failed",
+            }:
+                raise ValueError("run is terminal")
+            if expected_status is not None and expected_status not in {
+                run.status,
+                current_stage or "",
+            }:
+                raise ValueError("run status mismatch")
+
+            now = datetime.now(UTC)
+            self._cancel_pending_approvals(session, run_id, reason=reason, now=now)
+            self._cancel_pending_publish_operations(session, run_id, reason=reason, now=now)
+
+            checkpoint_ref = self._checkpoint_id(snapshot) if snapshot is not None else None
+            if snapshot is not None:
+                updated_config = self._graph.update_state(
+                    config,
+                    {
+                        "cancel_requested": True,
+                        "requested_action": "cancel_run",
+                        "control": {
+                            "requested_action": "cancel_run",
+                            "resume_from": current_node or "load_project_config",
+                            "cancel_requested": True,
+                        },
+                    },
+                    as_node=current_node or "load_project_config",
+                )
+                self._graph.invoke(Command(goto="cancel_run"), config=updated_config)
+                snapshot = cast(StateSnapshot, self._graph.get_state(updated_config))
+                checkpoint_ref = self._checkpoint_id(snapshot)
+
+            previous_status = run.status
+            run.status = "cancelled"
+            run.current_stage = "cancelled"
+            run.current_node = "complete_run"
+            self._record_transition(
+                session,
+                run,
+                from_status=previous_status,
+                to_status="cancelled",
+                reason_code="run_cancelled",
+                node_name="complete_run",
+                checkpoint_ref=checkpoint_ref,
+            )
+            session.commit()
+            return self._command_result(run, stage="cancelled", node="complete_run", reason=reason)
+
+    def safe_retry_run(
+        self,
+        run_id: str,
+        *,
+        reason: str,
+        expected_status: str | None = None,
+    ) -> dict[str, object]:
+        with self._session_factory() as session:
+            run = self._load_run(session, run_id)
+            thread_id = self._ensure_run_identity(run)
+            config = self._config(thread_id)
+            snapshot = self._current_snapshot(config)
+            current_stage = (
+                self._current_stage_from_snapshot(snapshot) if snapshot else run.current_stage
+            )
+
+            if current_stage in {"cancelled", "rejected"} or run.status in {
+                "cancelled",
+                "rejected",
+            }:
+                raise ValueError("run is terminal")
+            if expected_status is not None and expected_status not in {
+                run.status,
+                current_stage or "",
+            }:
+                raise ValueError("run status mismatch")
+
+            publish_plan = self._load_approved_publish_plan(session, run)
+            if publish_plan is None:
+                raise ValueError("approved publish plan missing")
+            if (
+                run.approved_publish_plan_id is not None
+                and run.approved_publish_plan_id != publish_plan.id
+            ):
+                raise ValueError("approved publish plan mismatch")
+            if build_publish_plan_hash(publish_plan.canonical_plan) != publish_plan.plan_hash:
+                raise ValueError("publish plan hash mismatch")
+            approval = self._load_approved_publish_approval(session, run.id, publish_plan.plan_hash)
+            if approval is None:
+                raise ValueError("approved publish approval missing")
+
+            retry_summary = self._publishing_service.verify_side_effects(
+                run_id=run_id,
+                publish_plan_ref=publish_plan.id,
+                approved_plan_hash=publish_plan.plan_hash,
+            )
+            if retry_summary.status == "blocked":
+                raise ValueError(
+                    retry_summary.error_summary or retry_summary.error_code or "safe retry blocked"
+                )
+
+            operations = session.scalars(
+                select(SideEffectOperation)
+                .where(SideEffectOperation.publish_plan_id == publish_plan.id)
+                .order_by(SideEffectOperation.sequence)
+            ).all()
+            if not operations:
+                raise ValueError("publish operations missing")
+
+            retry_sequences: list[int] = []
+            for operation in operations:
+                if operation.status == "succeeded":
+                    continue
+                if operation.status == "failed":
+                    if operation.last_error_class not in RETRYABLE_ERROR_CLASSES:
+                        raise ValueError("publish operation failure is not safe to retry")
+                    retry_sequences.append(operation.sequence)
+                    continue
+                if operation.status == "unknown":
+                    if operation.verification_status == "confirmed":
+                        continue
+                    retry_sequences.append(operation.sequence)
+                    continue
+                if operation.status in {"pending", "claimed", "running", "retry_pending"}:
+                    retry_sequences.append(operation.sequence)
+
+            if not retry_sequences:
+                previous_status = run.status
+                publish_plan.status = "completed"
+                run.status = "completed"
+                run.current_stage = "succeeded"
+                run.current_node = "complete_run"
+                self._record_transition(
+                    session,
+                    run,
+                    from_status=previous_status,
+                    to_status="completed",
+                    reason_code="run_safe_retry_completed",
+                    node_name="complete_run",
+                    checkpoint_ref=self._checkpoint_id(snapshot) if snapshot is not None else None,
+                )
+                session.commit()
+                return self._command_result(
+                    run, stage="succeeded", node="complete_run", reason=reason
+                )
+
+            if snapshot is None:
+                raise ValueError("run has no checkpoint to resume")
+
+            first_sequence = min(retry_sequences)
+            for operation in operations:
+                if operation.sequence < first_sequence:
+                    continue
+                if operation.status in {
+                    "failed",
+                    "unknown",
+                    "pending",
+                    "claimed",
+                    "running",
+                    "retry_pending",
+                }:
+                    operation.status = "retry_pending"
+                    operation.verification_status = "not_checked"
+                    operation.last_error_class = None
+                    operation.last_error_summary = None
+
+            publish_plan.status = "executing"
+            first_node = self._publish_node_for_sequence(first_sequence)
+            self._graph.invoke(Command(goto=first_node), config=config)
+            snapshot = cast(StateSnapshot, self._graph.get_state(config))
+            previous_status = run.status
+            run.status = self._status_from_snapshot(snapshot)
+            run.current_stage = self._current_stage_from_snapshot(snapshot) or run.current_stage
+            run.current_node = self._current_node_from_snapshot(snapshot)
+            run.scope_revision = self._scope_revision_from_snapshot(snapshot) or run.scope_revision
+            self._record_transition(
+                session,
+                run,
+                from_status=previous_status,
+                to_status=run.status,
+                reason_code="run_safe_retry_completed",
+                node_name=run.current_node,
+                checkpoint_ref=self._checkpoint_id(snapshot),
+            )
+            session.commit()
+            return self._command_result(
+                run, stage=run.current_stage, node=run.current_node, reason=reason
+            )
+
     def _config(self, thread_id: str) -> dict[str, dict[str, str]]:
         return {"configurable": {"thread_id": thread_id}}
 
@@ -269,6 +489,11 @@ class WorkflowRuntime:
         value = snapshot.values.get("current_node")
         return str(value) if isinstance(value, str) else None
 
+    def _current_snapshot(self, config: dict[str, dict[str, str]]) -> StateSnapshot | None:
+        if self._existing_checkpoint(config) is None:
+            return None
+        return cast(StateSnapshot, self._graph.get_state(config))
+
     def _checkpoint_id(self, snapshot: StateSnapshot) -> str | None:
         value = snapshot.config.get("configurable", {}).get("checkpoint_id")
         return value if isinstance(value, str) else None
@@ -328,6 +553,95 @@ class WorkflowRuntime:
                 HumanApproval.status == "pending",
             )
         )
+
+    def _load_approved_publish_plan(self, session: Session, run: ReportRun) -> PublishPlan | None:
+        if run.approved_publish_plan_id is not None:
+            publish_plan = session.get(PublishPlan, run.approved_publish_plan_id)
+            if publish_plan is not None:
+                return publish_plan
+        return session.scalar(
+            select(PublishPlan)
+            .where(
+                PublishPlan.run_id == run.id,
+                PublishPlan.status.in_(["approved", "executing", "partial_failed"]),
+            )
+            .order_by(PublishPlan.created_at.desc())
+        )
+
+    def _load_approved_publish_approval(
+        self, session: Session, run_id: str, plan_hash: str
+    ) -> HumanApproval | None:
+        return session.scalar(
+            select(HumanApproval).where(
+                HumanApproval.run_id == run_id,
+                HumanApproval.approval_type == "publish",
+                HumanApproval.status == "approved",
+                HumanApproval.plan_hash == plan_hash,
+            )
+        )
+
+    def _cancel_pending_approvals(
+        self, session: Session, run_id: str, *, reason: str, now: datetime
+    ) -> None:
+        approvals = session.scalars(
+            select(HumanApproval).where(
+                HumanApproval.run_id == run_id,
+                HumanApproval.status == "pending",
+            )
+        ).all()
+        for approval in approvals:
+            approval.status = "cancelled"
+            approval.decision = "cancel_run"
+            approval.actor_id = "workflow-runtime"
+            approval.actor_type = "system"
+            approval.decided_at = now
+            if approval.supplement is None:
+                approval.supplement = {"reason": reason}
+
+    def _cancel_pending_publish_operations(
+        self, session: Session, run_id: str, *, reason: str, now: datetime
+    ) -> None:
+        publish_plan = session.scalar(
+            select(PublishPlan)
+            .where(PublishPlan.run_id == run_id)
+            .order_by(PublishPlan.created_at.desc())
+        )
+        if publish_plan is None:
+            return
+        operations = session.scalars(
+            select(SideEffectOperation)
+            .where(SideEffectOperation.publish_plan_id == publish_plan.id)
+            .order_by(SideEffectOperation.sequence)
+        ).all()
+        publish_plan.status = "cancelled"
+        for operation in operations:
+            if operation.status in {"pending", "claimed", "retry_pending"}:
+                operation.status = "cancelled"
+                operation.last_error_summary = reason
+                operation.last_error_class = "cancelled"
+
+    def _publish_node_for_sequence(self, sequence: int) -> str:
+        return {
+            1: "create_feishu_document",
+            2: "send_group_summary",
+            3: "archive_report_record",
+        }.get(sequence, "archive_report_record")
+
+    def _command_result(
+        self,
+        run: ReportRun,
+        *,
+        stage: str,
+        node: str,
+        reason: str = "",
+    ) -> dict[str, object]:
+        return {
+            "run_id": run.id,
+            "status": run.status,
+            "current_stage": stage,
+            "current_node": node,
+            "reason": reason,
+        }
 
     def _resume_challenge_id(self, resume_payload: Mapping[str, object]) -> str:
         value = resume_payload.get("challenge_id") or resume_payload.get("approval_ref")

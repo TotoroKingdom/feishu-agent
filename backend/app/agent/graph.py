@@ -59,6 +59,7 @@ def build_workflow_graph(
     builder.add_node("archive_report_record", _archive_report_record(publisher))
     builder.add_node("verify_side_effects", _verify_side_effects(publisher))
     builder.add_node("compensate_partial_failure", _compensate_partial_failure(publisher))
+    builder.add_node("cancel_run", _cancel_run)
     builder.add_node("complete_run", _complete_run)
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
@@ -70,6 +71,7 @@ def build_workflow_graph(
         {
             "build_generation_scope": "build_generation_scope",
             "collect_feishu_data": "collect_feishu_data",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -78,6 +80,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "collect_github_data": "collect_github_data",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -86,6 +89,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "normalize_data": "normalize_data",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -94,6 +98,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "validate_data": "validate_data",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -102,6 +107,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "calculate_metrics": "calculate_metrics",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -110,6 +116,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "build_evidence": "build_evidence",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -118,6 +125,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "generate_structured_report": "generate_structured_report",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -126,6 +134,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "verify_grounding": "verify_grounding",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -134,6 +143,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "render_report": "render_report",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -142,6 +152,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "build_publish_plan": "build_publish_plan",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -150,6 +161,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "request_publish_confirmation": "request_publish_confirmation",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -158,6 +170,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "wait_publish_confirmation": "wait_publish_confirmation",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -168,6 +181,7 @@ def build_workflow_graph(
             "wait_publish_confirmation": "wait_publish_confirmation",
             "generate_structured_report": "generate_structured_report",
             "create_feishu_document": "create_feishu_document",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -176,6 +190,7 @@ def build_workflow_graph(
         _publish_side_effect_route,
         {
             "send_group_summary": "send_group_summary",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -184,6 +199,7 @@ def build_workflow_graph(
         _publish_side_effect_route,
         {
             "archive_report_record": "archive_report_record",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -192,6 +208,7 @@ def build_workflow_graph(
         _publish_side_effect_route,
         {
             "verify_side_effects": "verify_side_effects",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -201,6 +218,7 @@ def build_workflow_graph(
         {
             "compensate_partial_failure": "compensate_partial_failure",
             "complete_run": "complete_run",
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -208,6 +226,7 @@ def build_workflow_graph(
         "compensate_partial_failure",
         _publish_side_effect_route,
         {
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -215,6 +234,7 @@ def build_workflow_graph(
         "complete_run",
         _publish_side_effect_route,
         {
+            "cancel_run": "cancel_run",
             END: END,
         },
     )
@@ -1278,7 +1298,49 @@ def _complete_run(state: WorkflowState) -> dict[str, object]:
     }
 
 
+def _cancel_run(state: WorkflowState) -> dict[str, object]:
+    ensure_state_is_safe(state)
+    publish = state.get("publish")
+    plan_hash = None
+    side_effect_status = None
+    operation_refs: list[object] = []
+    next_operation_index = 0
+    if isinstance(publish, Mapping):
+        plan_hash = publish.get("plan_hash") if isinstance(publish.get("plan_hash"), str) else None
+        side_effect_status = (
+            publish.get("side_effect_status")
+            if isinstance(publish.get("side_effect_status"), str)
+            else None
+        )
+        existing_refs = publish.get("operation_refs")
+        if isinstance(existing_refs, list):
+            operation_refs = [item for item in existing_refs if isinstance(item, str)]
+        next_value = publish.get("next_operation_index")
+        if isinstance(next_value, int):
+            next_operation_index = next_value
+    return {
+        "publish": {
+            "plan_hash": plan_hash,
+            "operation_refs": operation_refs,
+            "next_operation_index": next_operation_index,
+            "side_effect_status": side_effect_status or "cancelled",
+        },
+        "current_stage": "cancelled",
+        "current_node": "complete_run",
+        "requested_action": None,
+        "resume_from": "cancel_run",
+        "control": {
+            "requested_action": None,
+            "resume_from": "cancel_run",
+            "cancel_requested": False,
+        },
+        "cancel_requested": False,
+    }
+
+
 def _generation_approval_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
     requested_action = _normalize_action_if_present(state.get("requested_action"))
     if requested_action is None:
         return END
@@ -1294,6 +1356,8 @@ def _generation_approval_route(state: WorkflowState) -> str:
 
 
 def _collection_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
@@ -1315,6 +1379,8 @@ def _collection_route(state: WorkflowState) -> str:
 
 
 def _publish_approval_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
@@ -1328,6 +1394,8 @@ def _publish_approval_route(state: WorkflowState) -> str:
 
 
 def _publish_side_effect_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
     if state.get("current_stage") in {"blocked", "succeeded", "partial_failed"}:
         return END
     current_node = state.get("current_node")

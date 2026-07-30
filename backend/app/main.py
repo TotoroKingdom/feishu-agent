@@ -46,6 +46,16 @@ class RunCreateResponse(BaseModel):
     status: str
 
 
+class RunCancelRequest(BaseModel):
+    reason: str
+    expected_status: str | None = None
+
+
+class RunSafeRetryRequest(BaseModel):
+    reason: str
+    expected_status: str | None = None
+
+
 def create_app(
     readiness_checks: Mapping[str, RequestCheck] | None = None,
     settings: Settings | None = None,
@@ -139,6 +149,32 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
         return JSONResponse(content=envelope.model_dump(mode="json"))
 
+    @application.post("/api/v1/admin/runs/{run_id}/cancel", status_code=202)
+    def cancel_admin_run(run_id: str, payload: RunCancelRequest) -> JSONResponse:
+        runtime = _workflow_runtime(application)
+        try:
+            result = runtime.cancel_run(
+                run_id,
+                reason=payload.reason,
+                expected_status=payload.expected_status,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return JSONResponse(content={"status": "accepted", "data": result}, status_code=202)
+
+    @application.post("/api/v1/admin/runs/{run_id}/safe-retry", status_code=202)
+    def safe_retry_admin_run(run_id: str, payload: RunSafeRetryRequest) -> JSONResponse:
+        runtime = _workflow_runtime(application)
+        try:
+            result = runtime.safe_retry_run(
+                run_id,
+                reason=payload.reason,
+                expected_status=payload.expected_status,
+            )
+        except ValueError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        return JSONResponse(content={"status": "accepted", "data": result}, status_code=202)
+
     @application.post("/api/v1/feishu/events")
     def feishu_events(request: Request, payload: FeishuEventRequest) -> JSONResponse:
         service = _feishu_callback_service(application)
@@ -184,6 +220,7 @@ def _session_factory(application: FastAPI) -> SessionFactory:
 def _feishu_callback_service(application: FastAPI) -> FeishuCallbackService:
     service = application.state.feishu_callback_service
     if service is None:
+
         def runtime_factory() -> WorkflowRuntime:
             return _workflow_runtime(application)
 
