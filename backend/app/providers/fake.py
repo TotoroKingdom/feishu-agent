@@ -366,6 +366,75 @@ class FakeEffectProvider:
             "provider_request_id": f"fake-request-archive-{run_id}",
         }
 
+    def query_feishu_document(self, external_id: str, run_id: str) -> dict[str, str]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return {
+                "status": "unknown",
+                "error_class": "timeout",
+                "error_summary": "verification timed out",
+                "external_id": external_id,
+                "url": f"https://fake.feishu.local/doc/{run_id}",
+            }
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return {
+                "status": "not_found",
+                "error_class": "resource_not_found",
+                "error_summary": "document was not found",
+                "external_id": external_id,
+            }
+        return {
+            "status": "confirmed",
+            "external_id": external_id,
+            "url": f"https://fake.feishu.local/doc/{run_id}",
+            "provider_request_id": f"fake-query-document-{run_id}",
+        }
+
+    def query_group_summary(self, external_id: str, run_id: str) -> dict[str, str]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return {
+                "status": "unknown",
+                "error_class": "timeout",
+                "error_summary": "verification timed out",
+                "external_id": external_id,
+                "url": f"https://fake.feishu.local/message/{run_id}",
+            }
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return {
+                "status": "not_found",
+                "error_class": "resource_not_found",
+                "error_summary": "group summary was not found",
+                "external_id": external_id,
+            }
+        return {
+            "status": "confirmed",
+            "external_id": external_id,
+            "url": f"https://fake.feishu.local/message/{run_id}",
+            "provider_request_id": f"fake-query-message-{run_id}",
+        }
+
+    def query_bitable_archive(self, external_id: str, run_id: str) -> dict[str, str]:
+        if self.scenario == FakeScenario.UNKNOWN:
+            return {
+                "status": "unknown",
+                "error_class": "timeout",
+                "error_summary": "verification timed out",
+                "external_id": external_id,
+                "url": f"https://fake.feishu.local/archive/{run_id}",
+            }
+        if self.scenario == FakeScenario.PARTIAL_FAILURE:
+            return {
+                "status": "not_found",
+                "error_class": "resource_not_found",
+                "error_summary": "archive was not found",
+                "external_id": external_id,
+            }
+        return {
+            "status": "confirmed",
+            "external_id": external_id,
+            "url": f"https://fake.feishu.local/archive/{run_id}",
+            "provider_request_id": f"fake-query-archive-{run_id}",
+        }
+
 
 def _fetch_status(records: list[dict[str, object]]) -> str:
     statuses = {

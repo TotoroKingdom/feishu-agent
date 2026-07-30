@@ -284,7 +284,7 @@ class SideEffectExecutor:
                 existing_operation.external_resource_id = None
                 existing_operation.external_url = None
                 existing_operation.provider_request_id = None
-                existing_operation.verification_status = "pending"
+                existing_operation.verification_status = "not_checked"
                 existing_operation.last_error_class = None
                 existing_operation.last_error_summary = None
                 operation = existing_operation
@@ -302,7 +302,7 @@ class SideEffectExecutor:
                     idempotency_key=operation_key,
                     status="running",
                     attempt_count=1,
-                    verification_status="pending",
+                    verification_status="not_checked",
                     started_at=now,
                     completed_at=None,
                 )
@@ -370,7 +370,7 @@ class SideEffectExecutor:
             operation.external_resource_id = external_id
             operation.external_url = external_url
             operation.provider_request_id = provider_request_id
-            operation.verification_status = "pending"
+            operation.verification_status = "not_checked"
             operation.completed_at = datetime.now(UTC)
             operation.updated_at = operation.completed_at
             attempt.status = "succeeded"

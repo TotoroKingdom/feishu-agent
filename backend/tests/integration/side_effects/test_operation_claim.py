@@ -126,7 +126,7 @@ def test_expired_running_operation_is_reclaimed_and_deduplicated(tmp_path) -> No
             external_resource_id=None,
             external_url=None,
             provider_request_id=None,
-            verification_status="pending",
+            verification_status="not_checked",
             last_error_class=None,
             last_error_summary=None,
             started_at=stale_started_at,
