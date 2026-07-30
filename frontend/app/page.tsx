@@ -18,6 +18,9 @@ export default function HomePage() {
             <Link className="meta-chip link-chip" href="/admin/runs/replace-with-run-id">
               Open a run detail
             </Link>
+            <Link className="meta-chip link-chip" href="/admin/configuration">
+              Open configuration
+            </Link>
           </div>
         </section>
       </div>
