@@ -117,7 +117,7 @@ class PublishingService:
                 content_hash=content_hash,
                 expected_publish_group_ref=_expected_publish_group_ref(run),
                 archive_resource_ref=_archive_resource_ref(session, run.project_id),
-                content_version=1,
+                content_version=report_version.version,
             )
             plan_hash = build_publish_plan_hash(plan_payload)
             existing = session.scalar(
@@ -140,7 +140,7 @@ class PublishingService:
                     status="draft",
                     canonical_plan=plan_payload,
                     plan_hash=plan_hash,
-                    content_version=1,
+                    content_version=report_version.version,
                     approved_at=None,
                     invalidated_at=None,
                 )

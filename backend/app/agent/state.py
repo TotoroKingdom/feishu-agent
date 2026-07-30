@@ -42,6 +42,7 @@ class WorkflowState(TypedDict, total=False):
     report_version_ref: str | None
     rendered_report_ref: str | None
     publish_plan_ref: str | None
+    report_regeneration_requested: bool
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
@@ -96,6 +97,7 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "report_version_ref": None,
         "rendered_report_ref": None,
         "publish_plan_ref": None,
+        "report_regeneration_requested": False,
         "scope": {},
         "diagnosis": {
             "source_node": None,

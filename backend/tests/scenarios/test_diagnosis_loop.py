@@ -101,7 +101,13 @@ class FlakyReportingService(ReportingService):
         self._error_code = error_code
         self._attempts = 0
 
-    def generate_structured_report(self, run_id: str, evidence_set_id: str) -> ReportStageOutcome:
+    def generate_structured_report(
+        self,
+        run_id: str,
+        evidence_set_id: str,
+        *,
+        force_new_version: bool = False,
+    ) -> ReportStageOutcome:
         self._attempts += 1
         if self._attempts == 1 or self._error_code == "REPORT_TIMEOUT":
             if self._error_code == "REPORT_TIMEOUT" or self._attempts == 1:
@@ -110,7 +116,11 @@ class FlakyReportingService(ReportingService):
                     error_code=self._error_code,
                     error_summary=f"{self._error_code.lower()} on attempt {self._attempts}",
                 )
-        return super().generate_structured_report(run_id, evidence_set_id)
+        return super().generate_structured_report(
+            run_id,
+            evidence_set_id,
+            force_new_version=force_new_version,
+        )
 
 
 def _make_runtime(

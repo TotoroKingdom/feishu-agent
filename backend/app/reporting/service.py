@@ -153,7 +153,13 @@ class ReportingService:
             session.commit()
             return ReportStageOutcome(status="complete", evidence_set_ref=evidence_set.id)
 
-    def generate_structured_report(self, run_id: str, evidence_set_id: str) -> ReportStageOutcome:
+    def generate_structured_report(
+        self,
+        run_id: str,
+        evidence_set_id: str,
+        *,
+        force_new_version: bool = False,
+    ) -> ReportStageOutcome:
         with self._session_factory() as session:
             run = self._load_run(session, run_id)
             evidence_set = session.get(EvidenceSet, evidence_set_id)
@@ -224,22 +230,33 @@ class ReportingService:
                     "definition_version": REPORT_GENERATION_VERSION,
                 }
             )
-            existing = session.scalar(
-                select(ReportVersion).where(
-                    ReportVersion.run_id == run_id,
-                    ReportVersion.structured_hash == structured_hash,
+            existing = None
+            if not force_new_version:
+                existing = session.scalar(
+                    select(ReportVersion).where(
+                        ReportVersion.run_id == run_id,
+                        ReportVersion.structured_hash == structured_hash,
+                    )
                 )
-            )
             if existing is None:
                 next_version = session.scalar(
                     select(func.coalesce(func.max(ReportVersion.version), 0)).where(
                         ReportVersion.run_id == run_id
                     )
                 )
+                next_version_int = int(next_version or 0) + 1
+                content_hash = canonical_json_hash(
+                    {
+                        "structured_hash": structured_hash,
+                        "data_snapshot_hash": data_snapshot_hash,
+                        "definition_version": REPORT_GENERATION_VERSION,
+                        "report_version": next_version_int,
+                    }
+                )
                 report_version = ReportVersion(
                     id=new_id(),
                     run_id=run_id,
-                    version=int(next_version or 0) + 1,
+                    version=next_version_int,
                     status=REPORT_STATUS_DRAFT,
                     structured_report=validated_report,
                     structured_hash=structured_hash,
@@ -301,14 +318,15 @@ class ReportingService:
                 node_execution_id="generate_structured_report",
                 tool_name="reports.generate_structured_report",
                 request_summary={"evidence_set_id": evidence_set_id},
-                result_summary={
-                    "content_hash": content_hash,
-                    "claim_count": len(validated_report["claims"]),
-                },
-                data_ref=report_version.id,
-                status="success",
-                retryable=False,
-            )
+                    result_summary={
+                        "content_hash": content_hash,
+                        "claim_count": len(validated_report["claims"]),
+                        "report_version": report_version.version,
+                    },
+                    data_ref=report_version.id,
+                    status="success",
+                    retryable=False,
+                )
             session.commit()
             return ReportStageOutcome(status="complete", report_version_ref=report_version.id)
 
@@ -556,6 +574,7 @@ class ReportingService:
             rendered = render_verified_report(
                 report_version.structured_report,
                 evidence_items=[_evidence_item_to_payload(item) for item in evidence_items],
+                report_version=report_version.version,
             )
             report_version.rendered_content = rendered.rendered_content
             report_version.content_hash = rendered.rendered_content_hash

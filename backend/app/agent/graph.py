@@ -263,6 +263,7 @@ def build_workflow_graph(
         _publish_approval_route,
         {
             "wait_publish_confirmation": "wait_publish_confirmation",
+            "build_generation_scope": "build_generation_scope",
             "generate_structured_report": "generate_structured_report",
             "create_feishu_document": "create_feishu_document",
             "cancel_run": "cancel_run",
@@ -902,7 +903,11 @@ def _generate_structured_report(reporter: ReportingService):
                 error_code="EVIDENCE_SET_MISSING",
                 error_summary="Evidence set missing from state",
             )
-        outcome = reporter.generate_structured_report(state["run_id"], evidence_set_ref)
+        outcome = reporter.generate_structured_report(
+            state["run_id"],
+            evidence_set_ref,
+            force_new_version=bool(state.get("report_regeneration_requested")),
+        )
         if outcome.status == "blocked":
             return _diagnosis_block(
                 state,
@@ -915,6 +920,7 @@ def _generate_structured_report(reporter: ReportingService):
             "current_stage": "verifying_grounding",
             "current_node": "verify_grounding",
             "report_version_ref": outcome.report_version_ref,
+            "report_regeneration_requested": False,
             "error_code": None,
             "error_summary": None,
         }
@@ -1139,6 +1145,8 @@ def _wait_publish_confirmation(publisher: PublishingService):
             raise ValueError("approval challenge_id mismatch")
         if _resume_revision(resume_payload) != int(state.get("approval_revision", 1)):
             raise ValueError("approval revision mismatch")
+        supplement = _resume_supplement(resume_payload, action)
+        scope_override = _scope_override_from_supplement(supplement)
         if _resume_presented_hash(resume_payload) != plan_hash:
             outcome = publisher.resume_publish_confirmation(
                 run_id=state["run_id"],
@@ -1150,7 +1158,7 @@ def _wait_publish_confirmation(publisher: PublishingService):
                 action=action,
                 actor_id=_resume_actor_id(resume_payload, state),
                 requested_from=approval["requested_from"],
-                supplement=_resume_supplement(resume_payload, action),
+                supplement=supplement,
             )
             if outcome.status == "blocked":
                 return {
@@ -1159,6 +1167,40 @@ def _wait_publish_confirmation(publisher: PublishingService):
                     "publish_plan_ref": publish_plan_ref,
                     "error_code": outcome.error_code,
                     "error_summary": outcome.error_summary,
+                }
+            if action == "update_supplement" and scope_override is not None:
+                return {
+                    "publish_plan_ref": None,
+                    "publish": {
+                        "plan_hash": None,
+                        "operation_refs": state.get("publish", {}).get("operation_refs", []),
+                        "next_operation_index": 0,
+                        "side_effect_status": "not_started",
+                    },
+                    "approval": {
+                        "active_approval_ref": None,
+                        "approval_type": None,
+                        "approval_revision": int(approval["approval_revision"]),
+                        "status": "superseded",
+                        "approved_scope_hash": None,
+                        "approved_plan_hash": None,
+                        "challenge_id": None,
+                        "requested_from": approval["requested_from"],
+                    },
+                    "approval_revision": int(approval["approval_revision"]),
+                    "scope_override": scope_override,
+                    "requested_action": APPROVAL_ACTION_MODIFY,
+                    "current_stage": "building_generation_scope",
+                    "current_node": "build_generation_scope",
+                    "resume_from": "wait_publish_confirmation",
+                    "control": {
+                        "requested_action": APPROVAL_ACTION_MODIFY,
+                        "resume_from": "wait_publish_confirmation",
+                        "cancel_requested": False,
+                        "scope_override": scope_override,
+                    },
+                    "cancel_requested": False,
+                    "report_regeneration_requested": False,
                 }
             return {
                 "publish_plan_ref": outcome.publish_plan_ref,
@@ -1187,9 +1229,11 @@ def _wait_publish_confirmation(publisher: PublishingService):
                     "requested_action": action,
                     "resume_from": "wait_publish_confirmation",
                     "cancel_requested": False,
-                    "supplement": _resume_supplement(resume_payload, action),
+                    "supplement": supplement,
                 },
                 "cancel_requested": False,
+                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"}
+                and scope_override is None,
             }
 
         outcome = publisher.resume_publish_confirmation(
@@ -1211,6 +1255,40 @@ def _wait_publish_confirmation(publisher: PublishingService):
                 "publish_plan_ref": publish_plan_ref,
                 "error_code": outcome.error_code,
                 "error_summary": outcome.error_summary,
+            }
+        if action == "update_supplement" and scope_override is not None:
+            return {
+                "publish_plan_ref": None,
+                "publish": {
+                    "plan_hash": None,
+                    "operation_refs": state.get("publish", {}).get("operation_refs", []),
+                    "next_operation_index": 0,
+                    "side_effect_status": "not_started",
+                },
+                "approval": {
+                    "active_approval_ref": None,
+                    "approval_type": None,
+                    "approval_revision": int(approval["approval_revision"]),
+                    "status": "superseded",
+                    "approved_scope_hash": None,
+                    "approved_plan_hash": None,
+                    "challenge_id": None,
+                    "requested_from": approval["requested_from"],
+                },
+                "approval_revision": int(approval["approval_revision"]),
+                "scope_override": scope_override,
+                "requested_action": APPROVAL_ACTION_MODIFY,
+                "current_stage": "building_generation_scope",
+                "current_node": "build_generation_scope",
+                "resume_from": "wait_publish_confirmation",
+                "control": {
+                    "requested_action": APPROVAL_ACTION_MODIFY,
+                    "resume_from": "wait_publish_confirmation",
+                    "cancel_requested": False,
+                    "scope_override": scope_override,
+                },
+                "cancel_requested": False,
+                "report_regeneration_requested": False,
             }
         if outcome.current_node == "generate_structured_report":
             return {
@@ -1240,9 +1318,10 @@ def _wait_publish_confirmation(publisher: PublishingService):
                     "requested_action": action,
                     "resume_from": "wait_publish_confirmation",
                     "cancel_requested": False,
-                    "supplement": _resume_supplement(resume_payload, action),
+                    "supplement": supplement,
                 },
                 "cancel_requested": False,
+                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"},
             }
 
         return {
@@ -1268,15 +1347,17 @@ def _wait_publish_confirmation(publisher: PublishingService):
             "approval_revision": outcome.approval_revision,
             "current_stage": outcome.current_stage,
             "current_node": outcome.current_node,
-            "requested_action": action,
-            "resume_from": "wait_publish_confirmation",
-            "control": {
                 "requested_action": action,
                 "resume_from": "wait_publish_confirmation",
+                "control": {
+                    "requested_action": action,
+                    "resume_from": "wait_publish_confirmation",
+                    "cancel_requested": outcome.current_stage == "cancelled",
+                    "supplement": supplement,
+                },
                 "cancel_requested": outcome.current_stage == "cancelled",
-                "supplement": _resume_supplement(resume_payload, action),
-            },
-            "cancel_requested": outcome.current_stage == "cancelled",
+                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"}
+                and scope_override is None,
         }
 
     return _node
@@ -1774,6 +1855,7 @@ def _publish_approval_route(state: WorkflowState) -> str:
     current_node = state.get("current_node")
     if current_node in {
         "wait_publish_confirmation",
+        "build_generation_scope",
         "generate_structured_report",
         "create_feishu_document",
     }:
@@ -1904,6 +1986,15 @@ def _resume_supplement(payload: Mapping[str, object], action: str) -> dict[str, 
     if not isinstance(supplement, Mapping):
         raise ValueError("supplement is required")
     return dict(supplement)
+
+
+def _scope_override_from_supplement(supplement: Mapping[str, object] | None) -> dict[str, object] | None:
+    if supplement is None:
+        return None
+    override = supplement.get("scope_override")
+    if not isinstance(override, Mapping):
+        return None
+    return dict(override)
 
 
 def _human_input_requested_fields(diagnosis: Mapping[str, object]) -> list[dict[str, object]]:

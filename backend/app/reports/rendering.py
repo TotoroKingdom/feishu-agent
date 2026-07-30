@@ -28,6 +28,7 @@ def render_verified_report(
     structured_report: Mapping[str, object],
     *,
     evidence_items: Sequence[Mapping[str, object]],
+    report_version: int = 1,
 ) -> RenderedReport:
     report_title = str(structured_report.get("report_title") or "Weekly Structured Report")
     summary = str(structured_report.get("summary") or "")
@@ -74,6 +75,7 @@ def render_verified_report(
     rendered_content_hash = canonical_json_hash(
         {
             "rendering_version": RENDERING_VERSION,
+            "report_version": report_version,
             "structured_hash": str(structured_report.get("structured_hash") or ""),
             "rendered_content": rendered_content,
         }
