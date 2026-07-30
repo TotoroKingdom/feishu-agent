@@ -20,9 +20,11 @@ from app.db.models import (
     new_id,
 )
 from app.providers.fake import FakeEffectProvider
+from app.side_effects.verifier import SideEffectVerifier
 
 SessionFactory = Callable[[], Session]
 DEFAULT_OPERATION_LEASE_SECONDS = 300
+RETRYABLE_ERROR_CLASSES = {"timeout", "rate_limited", "transient_timeout"}
 
 
 @dataclass(slots=True)
@@ -49,6 +51,10 @@ class SideEffectExecutor:
     ) -> None:
         self._session_factory = session_factory
         self._effect_provider = effect_provider or FakeEffectProvider()
+        self._verifier = SideEffectVerifier(
+            session_factory,
+            effect_provider=self._effect_provider,
+        )
 
     def create_feishu_document(
         self,
@@ -118,7 +124,7 @@ class SideEffectExecutor:
         approved_plan_hash: str,
     ) -> SideEffectExecutionOutcome:
         with self._session_factory() as session:
-            run, publish_plan = self._load_run_and_plan(session, run_id, publish_plan_ref)
+            _run, publish_plan = self._load_run_and_plan(session, run_id, publish_plan_ref)
             if approved_plan_hash != publish_plan.plan_hash:
                 return SideEffectExecutionOutcome(
                     status="blocked",
@@ -137,38 +143,181 @@ class SideEffectExecutor:
                     error_code="SIDE_EFFECT_OPERATION_MISSING",
                     error_summary="Not all publish operations have been executed",
                 )
-            if any(operation.status != "succeeded" for operation in operations):
-                return SideEffectExecutionOutcome(
-                    status="blocked",
-                    error_code="SIDE_EFFECT_OPERATION_INCOMPLETE",
-                    error_summary="One or more publish operations are not yet successful",
-                )
 
+            now = datetime.now(UTC)
+            for operation in operations:
+                if operation.status == "succeeded" and operation.verification_status == "confirmed":
+                    continue
+                if operation.external_resource_id is None:
+                    continue
+                if operation.status in {"succeeded", "running", "claimed", "unknown", "failed"}:
+                    verification = self._verifier.verify(operation.id)
+                    if verification.status == "confirmed":
+                        operation.status = "succeeded"
+                        operation.verification_status = "confirmed"
+                        operation.last_error_class = None
+                        operation.last_error_summary = None
+                        operation.updated_at = now
+                        continue
+                    if verification.status == "not_found":
+                        operation.status = "unknown"
+                        operation.verification_status = "not_found"
+                        operation.last_error_class = verification.error_code or "resource_not_found"
+                        operation.last_error_summary = (
+                            verification.error_summary or "Side effect was not found"
+                        )
+                        continue
+                    operation.status = "unknown"
+                    operation.verification_status = "inconclusive"
+                    operation.last_error_class = verification.error_code or "verification_timeout"
+                    operation.last_error_summary = (
+                        verification.error_summary or "verification inconclusive"
+                    )
+
+            summary = _build_partial_failure_summary(operations)
+            succeeded = [operation for operation in operations if operation.status == "succeeded"]
             artifacts = session.scalars(
                 select(ReportArtifact).where(
                     ReportArtifact.operation_id.in_([operation.id for operation in operations])
                 )
             ).all()
-            if len(artifacts) < 3:
+            now = datetime.now(UTC)
+            for artifact in artifacts:
+                linked_operation = next(
+                    (
+                        operation
+                        for operation in operations
+                        if operation.id == artifact.operation_id
+                    ),
+                    None,
+                )
+                if (
+                    linked_operation is not None
+                    and linked_operation.verification_status == "confirmed"
+                ):
+                    if artifact.verified_at is None:
+                        artifact.verified_at = now
+            if len(succeeded) == len(operations):
+                if len(artifacts) < 3:
+                    return SideEffectExecutionOutcome(
+                        status="blocked",
+                        error_code="REPORT_ARTIFACT_MISSING",
+                        error_summary="One or more artifacts are missing",
+                    )
+
+                publish_plan.status = "completed"
+                for operation in operations:
+                    operation.verification_status = "confirmed"
+                    operation.updated_at = now
+                session.commit()
                 return SideEffectExecutionOutcome(
-                    status="blocked",
-                    error_code="REPORT_ARTIFACT_MISSING",
-                    error_summary="One or more artifacts are missing",
+                    status="complete",
+                    current_stage="publishing",
+                    current_node="complete_run",
+                    side_effect_status="verified",
+                    next_operation_index=3,
                 )
 
+            if any(operation.verification_status == "inconclusive" for operation in operations):
+                return SideEffectExecutionOutcome(
+                    status="complete",
+                    error_summary=summary,
+                    current_stage="compensating",
+                    current_node="compensate_partial_failure",
+                    side_effect_status="partial_failed",
+                    next_operation_index=3,
+                )
+
+            if any(operation.status == "failed" for operation in operations):
+                if len(succeeded) > 0:
+                    publish_plan.status = "partial_failed"
+                    session.commit()
+                    return SideEffectExecutionOutcome(
+                        status="complete",
+                        error_summary=summary,
+                        current_stage="partial_failed",
+                        current_node="complete_run",
+                        side_effect_status="partial_failed",
+                        next_operation_index=3,
+                    )
+                return SideEffectExecutionOutcome(
+                    status="blocked",
+                    error_code="SIDE_EFFECT_OPERATION_FAILED",
+                    error_summary="Publish operations failed before any artifact was produced",
+                )
+
+            if any(operation.status == "unknown" for operation in operations):
+                if len(succeeded) > 0:
+                    return SideEffectExecutionOutcome(
+                        status="complete",
+                        error_summary=summary,
+                        current_stage="compensating",
+                        current_node="compensate_partial_failure",
+                        side_effect_status="partial_failed",
+                        next_operation_index=3,
+                    )
+                return SideEffectExecutionOutcome(
+                    status="blocked",
+                    error_code="SIDE_EFFECT_OPERATION_INCOMPLETE",
+                    error_summary=summary,
+                )
+
+            return SideEffectExecutionOutcome(
+                status="blocked",
+                error_code="SIDE_EFFECT_OPERATION_INCOMPLETE",
+                error_summary="One or more publish operations are not yet successful",
+            )
+
+    def compensate_partial_failure(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        with self._session_factory() as session:
+            run, publish_plan = self._load_run_and_plan(session, run_id, publish_plan_ref)
+            if approved_plan_hash != publish_plan.plan_hash:
+                return SideEffectExecutionOutcome(
+                    status="blocked",
+                    error_code="PUBLISH_PLAN_HASH_MISMATCH",
+                    error_summary="Approved plan hash does not match the persisted publish plan",
+                )
+            operations = session.scalars(
+                select(SideEffectOperation)
+                .where(SideEffectOperation.publish_plan_id == publish_plan.id)
+                .order_by(SideEffectOperation.sequence)
+            ).all()
+            summary = _build_partial_failure_summary(operations)
+            artifacts = session.scalars(
+                select(ReportArtifact).where(
+                    ReportArtifact.operation_id.in_([operation.id for operation in operations])
+                )
+            ).all()
             now = datetime.now(UTC)
-            for operation in operations:
-                operation.verification_status = "confirmed"
-                operation.updated_at = now
             for artifact in artifacts:
-                if artifact.verified_at is None:
-                    artifact.verified_at = now
+                linked_operation = next(
+                    (
+                        operation
+                        for operation in operations
+                        if operation.id == artifact.operation_id
+                    ),
+                    None,
+                )
+                if (
+                    linked_operation is not None
+                    and linked_operation.verification_status == "confirmed"
+                ):
+                    if artifact.verified_at is None:
+                        artifact.verified_at = now
+            publish_plan.status = "partial_failed"
             session.commit()
             return SideEffectExecutionOutcome(
                 status="complete",
-                current_stage="publishing",
+                error_summary=summary,
+                current_stage="partial_failed",
                 current_node="complete_run",
-                side_effect_status="verified",
+                side_effect_status="partial_failed",
                 next_operation_index=3,
             )
 
@@ -343,6 +492,26 @@ class SideEffectExecutor:
 
             if response_status != "success":
                 error_class = cast(str | None, response.get("error_class")) or "provider_error"
+                if response_status == "unknown" or error_class in RETRYABLE_ERROR_CLASSES:
+                    operation.status = "unknown"
+                    operation.verification_status = "not_checked"
+                    attempt.status = "unknown"
+                    operation.last_error_class = error_class
+                    operation.last_error_summary = response_status
+                    operation.completed_at = datetime.now(UTC)
+                    operation.updated_at = operation.completed_at
+                    attempt.error_class = error_class
+                    session.commit()
+                    return SideEffectExecutionOutcome(
+                        status="blocked",
+                        error_code="SIDE_EFFECT_OPERATION_UNKNOWN",
+                        error_summary="Publish operation outcome is unknown",
+                        operation_ref=operation.id,
+                        current_stage="compensating",
+                        current_node=next_node,
+                        side_effect_status="partial_failed",
+                        next_operation_index=next_operation_index,
+                    )
                 operation.status = "failed"
                 operation.last_error_class = error_class
                 operation.last_error_summary = response_status
@@ -583,3 +752,18 @@ def _operation_claim_is_expired(
         started_at = started_at.astimezone(UTC)
     current_time = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
     return current_time - started_at >= timedelta(seconds=lease_seconds)
+
+
+def _build_partial_failure_summary(operations: list[SideEffectOperation]) -> str:
+    succeeded = sum(1 for operation in operations if operation.status == "succeeded")
+    failed = sum(1 for operation in operations if operation.status == "failed")
+    unknown = sum(1 for operation in operations if operation.status == "unknown")
+    confirmed = sum(1 for operation in operations if operation.verification_status == "confirmed")
+    not_found = sum(1 for operation in operations if operation.verification_status == "not_found")
+    inconclusive = sum(
+        1 for operation in operations if operation.verification_status == "inconclusive"
+    )
+    return (
+        f"publish side effects: {succeeded} succeeded, {failed} failed, {unknown} unknown; "
+        f"verification: {confirmed} confirmed, {not_found} not_found, {inconclusive} inconclusive"
+    )

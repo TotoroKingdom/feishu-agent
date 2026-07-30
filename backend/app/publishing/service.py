@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -16,10 +16,18 @@ from app.approvals import (
     PUBLISH_APPROVAL_TYPE,
     canonical_json_hash,
 )
-from app.db.models import HumanApproval, Project, PublishPlan, ReportRun, ReportVersion, ToolExecution, new_id
+from app.db.models import (
+    HumanApproval,
+    Project,
+    PublishPlan,
+    ReportRun,
+    ReportVersion,
+    ToolExecution,
+    new_id,
+)
+from app.providers.fake import FakeEffectProvider
 from app.publishing.generation import build_publish_plan_hash, build_publish_plan_payload
 from app.side_effects.executor import SideEffectExecutionOutcome, SideEffectExecutor
-from app.providers.fake import FakeEffectProvider
 
 SessionFactory = Callable[[], Session]
 
@@ -174,7 +182,7 @@ class PublishingService:
     ) -> PublishPlanOutcome:
         allowed_from = list(requested_from or ("local-demo",))
         with self._session_factory() as session:
-            run = self._load_run(session, run_id)
+            _run = self._load_run(session, run_id)
             publish_plan = session.get(PublishPlan, publish_plan_ref)
             if publish_plan is None:
                 return PublishPlanOutcome(
@@ -365,10 +373,10 @@ class PublishingService:
                 approval.actor_id = actor_id
                 approval.actor_type = "feishu_user"
                 approval.decision = APPROVAL_ACTION_APPROVE_PUBLISH
-                approval.decided_at = datetime.now(timezone.utc)
+                approval.decided_at = datetime.now(UTC)
                 approval.status = "approved"
                 publish_plan.status = "approved"
-                publish_plan.approved_at = datetime.now(timezone.utc)
+                publish_plan.approved_at = datetime.now(UTC)
                 run.approved_publish_plan_id = publish_plan.id
                 session.commit()
                 return PublishResumeOutcome(
@@ -389,12 +397,12 @@ class PublishingService:
                 approval.actor_id = actor_id
                 approval.actor_type = "feishu_user"
                 approval.decision = normalized_action
-                approval.decided_at = datetime.now(timezone.utc)
+                approval.decided_at = datetime.now(UTC)
                 if supplement is not None:
                     approval.supplement = dict(supplement)
                 approval.status = "superseded"
                 publish_plan.status = "invalidated"
-                publish_plan.invalidated_at = datetime.now(timezone.utc)
+                publish_plan.invalidated_at = datetime.now(UTC)
                 run.approved_publish_plan_id = None
                 session.commit()
                 return PublishResumeOutcome(
@@ -412,10 +420,10 @@ class PublishingService:
                 approval.actor_id = actor_id
                 approval.actor_type = "feishu_user"
                 approval.decision = normalized_action
-                approval.decided_at = datetime.now(timezone.utc)
+                approval.decided_at = datetime.now(UTC)
                 approval.status = "cancelled"
                 publish_plan.status = "cancelled"
-                publish_plan.invalidated_at = publish_plan.invalidated_at or datetime.now(timezone.utc)
+                publish_plan.invalidated_at = publish_plan.invalidated_at or datetime.now(UTC)
                 run.approved_publish_plan_id = None
                 session.commit()
                 return PublishResumeOutcome(
@@ -489,7 +497,7 @@ class PublishingService:
         approval.actor_id = actor_id
         approval.actor_type = "feishu_user"
         approval.decision = APPROVAL_ACTION_REGENERATE_REPORT
-        approval.decided_at = datetime.now(timezone.utc)
+        approval.decided_at = datetime.now(UTC)
         approval.status = "superseded"
         next_revision = approval.revision + 1
         new_approval = HumanApproval(
@@ -567,6 +575,19 @@ class PublishingService:
             approved_plan_hash=approved_plan_hash,
         )
 
+    def compensate_partial_failure(
+        self,
+        *,
+        run_id: str,
+        publish_plan_ref: str,
+        approved_plan_hash: str,
+    ) -> SideEffectExecutionOutcome:
+        return self._side_effects.compensate_partial_failure(
+            run_id=run_id,
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+
     def _load_run(self, session: Session, run_id: str) -> ReportRun:
         run = session.get(ReportRun, run_id)
         if run is None:
@@ -614,7 +635,7 @@ class PublishingService:
         )
         if existing is not None:
             return existing
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         record = ToolExecution(
             id=new_id(),
             run_id=run_id,

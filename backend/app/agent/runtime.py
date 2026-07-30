@@ -10,11 +10,18 @@ from langgraph.types import Command, StateSnapshot
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.collection.service import CollectionService
-from app.approvals import GenerationApprovalStore
 from app.agent.graph import build_workflow_graph
 from app.agent.state import build_initial_state, thread_id_for_run
-from app.db.models import HumanApproval, Project, ReportRun, RunStatusHistory
+from app.approvals import GenerationApprovalStore
+from app.collection.service import CollectionService
+from app.db.models import (
+    HumanApproval,
+    Project,
+    PublishPlan,
+    ReportRun,
+    RunStatusHistory,
+    SideEffectOperation,
+)
 from app.metrics.service import MetricsService
 from app.publishing.service import PublishingService
 from app.reporting.service import ReportingService
@@ -100,7 +107,10 @@ class WorkflowRuntime:
             pending = self._load_pending_approval(session, run_id)
             normalized_resume_payload = dict(resume_payload)
             if pending is not None:
-                if "challenge_id" not in normalized_resume_payload and "approval_ref" not in normalized_resume_payload:
+                if (
+                    "challenge_id" not in normalized_resume_payload
+                    and "approval_ref" not in normalized_resume_payload
+                ):
                     normalized_resume_payload["challenge_id"] = pending.challenge_id
                     normalized_resume_payload["approval_ref"] = pending.challenge_id
                 if "approval_revision" not in normalized_resume_payload:
@@ -160,6 +170,29 @@ class WorkflowRuntime:
                 and self._existing_checkpoint(self._config(run.thread_id)) is not None
             ]
 
+    def recover_partial_failed_run_ids(self) -> list[str]:
+        with self._session_factory() as session:
+            plans = session.scalars(
+                select(PublishPlan).where(
+                    PublishPlan.status.in_(["approved", "executing", "partial_failed"])
+                )
+            ).all()
+            run_ids: list[str] = []
+            for plan in plans:
+                operations = session.scalars(
+                    select(SideEffectOperation)
+                    .where(SideEffectOperation.publish_plan_id == plan.id)
+                    .order_by(SideEffectOperation.sequence)
+                ).all()
+                if not operations:
+                    continue
+                if any(operation.status != "succeeded" for operation in operations):
+                    if any(operation.status == "succeeded" for operation in operations) or any(
+                        operation.status in {"running", "unknown"} for operation in operations
+                    ):
+                        run_ids.append(plan.run_id)
+            return run_ids
+
     def _config(self, thread_id: str) -> dict[str, dict[str, str]]:
         return {"configurable": {"thread_id": thread_id}}
 
@@ -214,9 +247,12 @@ class WorkflowRuntime:
             "report_rendered",
             "publish_approved",
             "publishing",
+            "compensating",
             "succeeded",
         }:
             return "completed"
+        if stage == "partial_failed":
+            return "partial_failed"
         if stage == "blocked":
             return "blocked"
         if stage == "rejected":
@@ -271,6 +307,10 @@ class WorkflowRuntime:
             return "metrics_calculating"
         if stage == "publishing":
             return "side_effects_executing"
+        if stage == "compensating":
+            return "side_effects_compensating"
+        if stage == "partial_failed":
+            return "side_effects_partial_failed"
         if stage == "succeeded":
             return "side_effects_complete"
         if stage == "blocked":
@@ -373,6 +413,9 @@ class WorkflowWorker:
 
     def recover_waiting_runs(self) -> list[str]:
         return self._runtime.recover_waiting_run_ids()
+
+    def recover_partial_failed_runs(self) -> list[str]:
+        return self._runtime.recover_partial_failed_run_ids()
 
     def resume(self, run_id: str, resume_payload: Mapping[str, object]) -> WorkflowExecutionResult:
         return self._runtime.resume(run_id, resume_payload)

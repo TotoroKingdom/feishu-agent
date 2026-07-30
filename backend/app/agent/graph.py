@@ -19,9 +19,9 @@ from app.approvals import (
     build_generation_scope,
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
-from app.metrics.service import MetricStageOutcome, MetricsService
-from app.publishing.service import PublishPlanOutcome, PublishResumeOutcome, PublishingService
-from app.reporting.service import ReportStageOutcome, ReportingService
+from app.metrics.service import MetricsService, MetricStageOutcome
+from app.publishing.service import PublishingService, PublishPlanOutcome, PublishResumeOutcome
+from app.reporting.service import ReportingService, ReportStageOutcome
 
 
 def build_workflow_graph(
@@ -58,6 +58,7 @@ def build_workflow_graph(
     builder.add_node("send_group_summary", _send_group_summary(publisher))
     builder.add_node("archive_report_record", _archive_report_record(publisher))
     builder.add_node("verify_side_effects", _verify_side_effects(publisher))
+    builder.add_node("compensate_partial_failure", _compensate_partial_failure(publisher))
     builder.add_node("complete_run", _complete_run)
     builder.add_edge(START, "load_project_config")
     builder.add_edge("load_project_config", "build_generation_scope")
@@ -198,7 +199,15 @@ def build_workflow_graph(
         "verify_side_effects",
         _publish_side_effect_route,
         {
+            "compensate_partial_failure": "compensate_partial_failure",
             "complete_run": "complete_run",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "compensate_partial_failure",
+        _publish_side_effect_route,
+        {
             END: END,
         },
     )
@@ -958,7 +967,9 @@ def _wait_publish_confirmation(publisher: PublishingService):
                 "approval_revision": outcome.approval_revision,
                 "status": "approved" if outcome.current_stage != "cancelled" else "cancelled",
                 "approved_scope_hash": None,
-                "approved_plan_hash": outcome.plan_hash if outcome.current_stage != "cancelled" else None,
+                "approved_plan_hash": outcome.plan_hash
+                if outcome.current_stage != "cancelled"
+                else None,
                 "challenge_id": outcome.challenge_id or challenge_id,
                 "requested_from": approval["requested_from"],
             },
@@ -1008,7 +1019,9 @@ def _create_feishu_document(publisher: PublishingService):
         return {
             "publish": {
                 "plan_hash": approved_plan_hash,
-                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "operation_refs": _append_unique(
+                    publish.get("operation_refs"), outcome.operation_ref
+                ),
                 "next_operation_index": outcome.next_operation_index or 1,
                 "side_effect_status": outcome.side_effect_status or "executing",
             },
@@ -1056,7 +1069,9 @@ def _send_group_summary(publisher: PublishingService):
         return {
             "publish": {
                 "plan_hash": approved_plan_hash,
-                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "operation_refs": _append_unique(
+                    publish.get("operation_refs"), outcome.operation_ref
+                ),
                 "next_operation_index": outcome.next_operation_index or 2,
                 "side_effect_status": outcome.side_effect_status or "executing",
             },
@@ -1104,7 +1119,9 @@ def _archive_report_record(publisher: PublishingService):
         return {
             "publish": {
                 "plan_hash": approved_plan_hash,
-                "operation_refs": _append_unique(publish.get("operation_refs"), outcome.operation_ref),
+                "operation_refs": _append_unique(
+                    publish.get("operation_refs"), outcome.operation_ref
+                ),
                 "next_operation_index": outcome.next_operation_index or 3,
                 "side_effect_status": outcome.side_effect_status or "executing",
             },
@@ -1144,7 +1161,7 @@ def _verify_side_effects(publisher: PublishingService):
         if outcome.status == "blocked":
             return {
                 "current_stage": outcome.current_stage or "blocked",
-                "current_node": "verify_side_effects",
+                "current_node": outcome.current_node or "verify_side_effects",
                 "publish_plan_ref": publish_plan_ref,
                 "error_code": outcome.error_code,
                 "error_summary": outcome.error_summary,
@@ -1155,6 +1172,7 @@ def _verify_side_effects(publisher: PublishingService):
                 "operation_refs": publish.get("operation_refs", []),
                 "next_operation_index": outcome.next_operation_index or 3,
                 "side_effect_status": outcome.side_effect_status or "verified",
+                "summary": outcome.error_summary or publish.get("summary"),
             },
             "current_stage": outcome.current_stage or "publishing",
             "current_node": outcome.current_node or "complete_run",
@@ -1163,6 +1181,55 @@ def _verify_side_effects(publisher: PublishingService):
             "control": {
                 "requested_action": None,
                 "resume_from": "verify_side_effects",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _compensate_partial_failure(publisher: PublishingService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        publish_plan_ref = state.get("publish_plan_ref")
+        publish = state.get("publish")
+        approved_plan_hash = _require_publish_plan_hash(publish)
+        if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
+            return {
+                "current_stage": "blocked",
+                "current_node": "compensate_partial_failure",
+                "error_code": "PUBLISH_PLAN_MISSING",
+                "error_summary": "Publish plan missing from state",
+            }
+        outcome = publisher.compensate_partial_failure(
+            run_id=state["run_id"],
+            publish_plan_ref=publish_plan_ref,
+            approved_plan_hash=approved_plan_hash,
+        )
+        if outcome.status == "blocked":
+            return {
+                "current_stage": outcome.current_stage or "blocked",
+                "current_node": "compensate_partial_failure",
+                "publish_plan_ref": publish_plan_ref,
+                "error_code": outcome.error_code,
+                "error_summary": outcome.error_summary,
+            }
+        return {
+            "publish": {
+                "plan_hash": approved_plan_hash,
+                "operation_refs": publish.get("operation_refs", []),
+                "next_operation_index": outcome.next_operation_index or 3,
+                "side_effect_status": outcome.side_effect_status or "partial_failed",
+                "summary": outcome.error_summary or publish.get("summary"),
+            },
+            "current_stage": outcome.current_stage or "partial_failed",
+            "current_node": outcome.current_node or "complete_run",
+            "requested_action": None,
+            "resume_from": "compensate_partial_failure",
+            "control": {
+                "requested_action": None,
+                "resume_from": "compensate_partial_failure",
                 "cancel_requested": False,
             },
             "cancel_requested": False,
@@ -1181,7 +1248,9 @@ def _complete_run(state: WorkflowState) -> dict[str, object]:
     if isinstance(publish, Mapping):
         plan_hash = publish.get("plan_hash") if isinstance(publish.get("plan_hash"), str) else None
         side_effect_status = (
-            publish.get("side_effect_status") if isinstance(publish.get("side_effect_status"), str) else None
+            publish.get("side_effect_status")
+            if isinstance(publish.get("side_effect_status"), str)
+            else None
         )
         existing_refs = publish.get("operation_refs")
         if isinstance(existing_refs, list):
@@ -1215,7 +1284,11 @@ def _generation_approval_route(state: WorkflowState) -> str:
         return END
     if requested_action == APPROVAL_ACTION_MODIFY:
         return "build_generation_scope"
-    if requested_action in {APPROVAL_ACTION_CANCEL, APPROVAL_ACTION_LEGACY_CANCEL, APPROVAL_ACTION_REJECT}:
+    if requested_action in {
+        APPROVAL_ACTION_CANCEL,
+        APPROVAL_ACTION_LEGACY_CANCEL,
+        APPROVAL_ACTION_REJECT,
+    }:
         return END
     return "collect_feishu_data"
 
@@ -1245,19 +1318,24 @@ def _publish_approval_route(state: WorkflowState) -> str:
     if state.get("current_stage") == "blocked":
         return END
     current_node = state.get("current_node")
-    if current_node in {"wait_publish_confirmation", "generate_structured_report", "create_feishu_document"}:
+    if current_node in {
+        "wait_publish_confirmation",
+        "generate_structured_report",
+        "create_feishu_document",
+    }:
         return str(current_node)
     return END
 
 
 def _publish_side_effect_route(state: WorkflowState) -> str:
-    if state.get("current_stage") in {"blocked", "succeeded"}:
+    if state.get("current_stage") in {"blocked", "succeeded", "partial_failed"}:
         return END
     current_node = state.get("current_node")
     if current_node in {
         "send_group_summary",
         "archive_report_record",
         "verify_side_effects",
+        "compensate_partial_failure",
         "complete_run",
     }:
         return str(current_node)
