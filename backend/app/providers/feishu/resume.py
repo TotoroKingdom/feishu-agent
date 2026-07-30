@@ -13,6 +13,7 @@ from app.approvals import (
     APPROVAL_ACTION_REGENERATE_REPORT,
     APPROVAL_ACTION_REJECT,
     APPROVAL_ACTION_UPDATE_SUPPLEMENT,
+    APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
     APPROVAL_ACTIONS,
     PUBLISH_APPROVAL_ACTIONS,
 )
@@ -35,6 +36,7 @@ def normalize_callback_action(action: str) -> str:
         APPROVAL_ACTION_APPROVE_PUBLISH: APPROVAL_ACTION_APPROVE_PUBLISH,
         APPROVAL_ACTION_REGENERATE_REPORT: APPROVAL_ACTION_REGENERATE_REPORT,
         APPROVAL_ACTION_UPDATE_SUPPLEMENT: APPROVAL_ACTION_UPDATE_SUPPLEMENT,
+        APPROVAL_ACTION_SUBMIT_HUMAN_INPUT: APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
         APPROVAL_ACTION_CANCEL_PUBLISH: APPROVAL_ACTION_CANCEL_PUBLISH,
     }
     if normalized not in aliases:
@@ -43,6 +45,8 @@ def normalize_callback_action(action: str) -> str:
 
 
 def approval_type_for_action(action: str) -> str:
+    if action == APPROVAL_ACTION_SUBMIT_HUMAN_INPUT:
+        return "human_input"
     if action in APPROVAL_ACTIONS:
         return "generation"
     if action in PUBLISH_APPROVAL_ACTIONS:
@@ -73,6 +77,12 @@ def build_resume_payload(
             and "supplement" in action.payload
         ):
             payload["supplement"] = dict(action.payload["supplement"])  # type: ignore[arg-type]
+        if normalized_action == APPROVAL_ACTION_SUBMIT_HUMAN_INPUT:
+            supplement = action.payload.get("supplement")
+            if isinstance(supplement, Mapping):
+                payload["supplement"] = dict(supplement)
+            else:
+                payload["supplement"] = dict(action.payload)
     return payload
 
 

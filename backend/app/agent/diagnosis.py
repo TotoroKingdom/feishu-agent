@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.approvals import canonical_json_hash
 from app.agent.policies.problem_registry import ProblemPolicyRegistry, ProblemPolicyResolution
 from app.db.models import DiagnosisRecord, ValidationResult, new_id
 
@@ -67,6 +68,14 @@ class DiagnosisService:
                 resolution=resolution,
                 attempt=attempt,
             )
+            human_input_patch = _human_input_patch(
+                session,
+                record=record,
+                source_node=source_node,
+                observation=observation,
+                resolution=resolution,
+                attempt=attempt,
+            )
             session.commit()
 
         retry_counters = dict(current_counters)
@@ -82,6 +91,8 @@ class DiagnosisService:
             "next_repair_action": resolution.planned_action,
             "planned_node": resolution.next_node,
         }
+        if human_input_patch is not None:
+            diagnosis_patch.update(human_input_patch)
 
         if resolution.exit_route == "blocked":
             diagnosis_patch["result"] = "blocked"
@@ -265,6 +276,69 @@ def _impact_scope(observation: Mapping[str, object]) -> dict[str, object]:
     if isinstance(impact_scope, Mapping):
         return dict(impact_scope)
     return {}
+
+
+def _human_input_patch(
+    session: Session,
+    *,
+    record: DiagnosisRecord,
+    source_node: str,
+    observation: Mapping[str, object],
+    resolution: ProblemPolicyResolution,
+    attempt: int,
+) -> dict[str, object] | None:
+    if resolution.planned_action != "request_human_input":
+        return None
+
+    required_fields = _human_input_required_fields(session, record, observation, source_node)
+    resume_from = _human_input_resume_from(source_node)
+    prompt_schema = {
+        "problem_key": resolution.problem_key,
+        "requested_fields": required_fields,
+        "resume_from": resume_from,
+        "checkpoint_id": record.id,
+    }
+    return {
+        "problem_key": resolution.problem_key,
+        "attempt": attempt,
+        "reason": _string_value(observation.get("error_summary"))
+        or _string_value(observation.get("error_code"))
+        or "human input required",
+        "required_fields": required_fields,
+        "resume_from": resume_from,
+        "checkpoint_id": record.id,
+        "required": True,
+        "request_payload_hash": canonical_json_hash(prompt_schema),
+    }
+
+
+def _human_input_required_fields(
+    session: Session,
+    record: DiagnosisRecord,
+    observation: Mapping[str, object],
+    source_node: str,
+) -> list[dict[str, object]]:
+    if record.validation_result_id is not None:
+        validation_result = session.get(ValidationResult, record.validation_result_id)
+        if validation_result is not None:
+            fields: list[dict[str, object]] = []
+            for item in validation_result.missing_items:
+                if not isinstance(item, str) or not item.strip():
+                    continue
+                fields.append({"name": item, "type": "string", "required": True})
+            if fields:
+                return fields
+    summary = _normalize_token(_string_value(observation.get("error_summary")))
+    code = _normalize_token(_string_value(observation.get("error_code")))
+    if source_node == "validate_data" and ("github_username" in summary or "member_mapping" in code):
+        return [{"name": "github_username", "type": "string", "required": True}]
+    return [{"name": "supplement", "type": "string", "required": True}]
+
+
+def _human_input_resume_from(source_node: str) -> str:
+    if source_node == "validate_data":
+        return "validate_data"
+    return source_node
 
 
 def _normalize_token(value: str | None) -> str:

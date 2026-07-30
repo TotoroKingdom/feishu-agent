@@ -62,6 +62,7 @@ class WorkflowState(TypedDict, total=False):
         "regenerate_report",
         "update_supplement",
         "cancel_publish",
+        "submit_human_input",
     ]
     resume_from: str
     cancel_requested: bool
@@ -103,6 +104,13 @@ def build_initial_state(run_id: str) -> WorkflowState:
             "diagnosis_record_refs": [],
             "next_repair_action": None,
             "planned_node": None,
+            "problem_key": None,
+            "attempt": None,
+            "reason": None,
+            "required_fields": [],
+            "resume_from": None,
+            "checkpoint_id": None,
+            "request_payload_hash": None,
         },
         "approval": {
             "active_approval_ref": None,
@@ -111,6 +119,7 @@ def build_initial_state(run_id: str) -> WorkflowState:
             "status": "none",
             "approved_scope_hash": None,
             "approved_plan_hash": None,
+            "request_payload_hash": None,
             "challenge_id": None,
             "requested_from": [],
         },

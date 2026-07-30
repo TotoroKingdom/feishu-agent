@@ -152,8 +152,8 @@ class ProblemPolicyRegistry:
                 "severity": "high",
                 "recoverability": "human",
                 "planned_action": "request_human_input",
-                "next_node": None,
-                "exit_route": "blocked",
+                "next_node": "request_human_input",
+                "exit_route": "continue",
                 "max_attempts": 1,
                 "allowed_actions": ("request_human_input", "abort_run"),
                 "retryable": False,
@@ -183,13 +183,13 @@ class ProblemPolicyRegistry:
                 }
             return {
                 "severity": "high",
-                "recoverability": "retryable",
-                "planned_action": "repair_and_retry",
-                "next_node": node_name,
-                "exit_route": "retry",
-                "max_attempts": 2,
-                "allowed_actions": ("repair_and_retry", "abort_run"),
-                "retryable": True,
+                "recoverability": "human",
+                "planned_action": "request_human_input",
+                "next_node": "request_human_input",
+                "exit_route": "continue",
+                "max_attempts": 1,
+                "allowed_actions": ("request_human_input", "abort_run"),
+                "retryable": False,
             }
         if problem_type == "conflict":
             return {

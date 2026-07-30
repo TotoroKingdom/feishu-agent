@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 from app.agent.graph import build_workflow_graph
 from app.agent.diagnosis import DiagnosisService
 from app.agent.state import build_initial_state, thread_id_for_run
-from app.approvals import GenerationApprovalStore
+from app.approvals import GenerationApprovalStore, HumanInputApprovalStore
 from app.collection.service import CollectionService
 from app.db.models import (
     HumanApproval,
@@ -53,9 +53,11 @@ class WorkflowRuntime:
         metrics_service: MetricsService | None = None,
         reporting_service: ReportingService | None = None,
         publishing_service: PublishingService | None = None,
+        human_input_store: HumanInputApprovalStore | None = None,
     ) -> None:
         self._session_factory = session_factory
         self._approval_store = GenerationApprovalStore(session_factory)
+        self._human_input_store = human_input_store or HumanInputApprovalStore(session_factory)
         self._diagnosis_service = diagnosis_service or DiagnosisService(session_factory)
         self._collection_service = collection_service or CollectionService(session_factory)
         self._metrics_service = metrics_service or MetricsService(session_factory)
@@ -70,6 +72,7 @@ class WorkflowRuntime:
             self._metrics_service,
             self._reporting_service,
             self._publishing_service,
+            self._human_input_store,
         )
 
     def start(self, run_id: str) -> WorkflowExecutionResult:
@@ -140,6 +143,11 @@ class WorkflowRuntime:
                         )
                         if isinstance(publish_hash, str):
                             normalized_resume_payload["presented_hash"] = publish_hash
+                    elif pending.approval_type == "human_input":
+                        if isinstance(pending.request_payload_hash, str):
+                            normalized_resume_payload["presented_hash"] = (
+                                pending.request_payload_hash
+                            )
                 if self._resume_challenge_id(normalized_resume_payload) != pending.challenge_id:
                     return self._result_from_snapshot(run_id, thread_id, snapshot)
             self._graph.invoke(Command(resume=normalized_resume_payload), config=config)
@@ -464,6 +472,8 @@ class WorkflowRuntime:
             return "waiting"
         if stage == "waiting_publish_approval":
             return "waiting"
+        if stage == "waiting_human_input":
+            return "waiting"
         if stage in {
             "validated",
             "metrics_calculated",
@@ -512,6 +522,8 @@ class WorkflowRuntime:
             return "generation_confirmation_started"
         if stage == "waiting_confirmation":
             return "generation_confirmation_waiting"
+        if stage == "waiting_human_input":
+            return "human_input_waiting"
         if stage == "validated":
             return "generation_confirmation_approved"
         if stage == "building_publish_plan":
@@ -724,9 +736,9 @@ class WorkflowWorker:
         self._runtime = WorkflowRuntime(
             session_factory,
             checkpointer,
-            collection_service,
-            metrics_service,
-            reporting_service,
+            collection_service=collection_service,
+            metrics_service=metrics_service,
+            reporting_service=reporting_service,
         )
 
     def recover_waiting_runs(self) -> list[str]:

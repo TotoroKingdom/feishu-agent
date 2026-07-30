@@ -16,6 +16,7 @@ SessionFactory = Callable[[], Session]
 
 GENERATION_APPROVAL_TYPE = "generation"
 PUBLISH_APPROVAL_TYPE = "publish"
+HUMAN_INPUT_APPROVAL_TYPE = "human_input"
 APPROVAL_ACTION_APPROVE = "approve_generation"
 APPROVAL_ACTION_MODIFY = "modify_generation_scope"
 APPROVAL_ACTION_CANCEL = "cancel_run"
@@ -26,6 +27,7 @@ APPROVAL_ACTION_APPROVE_PUBLISH = "approve_publish"
 APPROVAL_ACTION_REGENERATE_REPORT = "regenerate_report"
 APPROVAL_ACTION_UPDATE_SUPPLEMENT = "update_supplement"
 APPROVAL_ACTION_CANCEL_PUBLISH = "cancel_publish"
+APPROVAL_ACTION_SUBMIT_HUMAN_INPUT = "submit_human_input"
 APPROVAL_ACTIONS = {
     APPROVAL_ACTION_APPROVE,
     APPROVAL_ACTION_MODIFY,
@@ -39,6 +41,11 @@ PUBLISH_APPROVAL_ACTIONS = {
     APPROVAL_ACTION_REGENERATE_REPORT,
     APPROVAL_ACTION_UPDATE_SUPPLEMENT,
     APPROVAL_ACTION_CANCEL_PUBLISH,
+}
+HUMAN_INPUT_APPROVAL_ACTIONS = {
+    APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+    APPROVAL_ACTION_CANCEL,
+    APPROVAL_ACTION_LEGACY_CANCEL,
 }
 
 _ALLOWED_SCOPE_OVERRIDE_KEYS = {
@@ -294,6 +301,108 @@ class PublishApprovalStore:
             session.refresh(approval)
             return approval
 
+
+class HumanInputApprovalStore:
+    def __init__(self, session_factory: SessionFactory) -> None:
+        self._session_factory = session_factory
+
+    def ensure_pending_human_input_approval(
+        self,
+        *,
+        run_id: str,
+        revision: int,
+        request_payload_hash: str,
+        requested_from: Sequence[str] | None = None,
+        card_message_id: str | None = None,
+        challenge_id: str | None = None,
+    ) -> HumanApproval:
+        allowed_from = list(requested_from or ("local-demo",))
+        with self._session_factory() as session:
+            existing = session.scalar(
+                select(HumanApproval).where(
+                    HumanApproval.run_id == run_id,
+                    HumanApproval.approval_type == HUMAN_INPUT_APPROVAL_TYPE,
+                    HumanApproval.revision == revision,
+                )
+            )
+            if existing is not None:
+                if existing.request_payload_hash != request_payload_hash:
+                    raise ValueError("human input approval revision hash mismatch")
+                return existing
+
+            approval = HumanApproval(
+                id=new_id(),
+                run_id=run_id,
+                approval_type=HUMAN_INPUT_APPROVAL_TYPE,
+                revision=revision,
+                status="pending",
+                challenge_id=challenge_id or str(uuid4()),
+                card_message_id=card_message_id,
+                requested_from=allowed_from,
+                request_payload_hash=request_payload_hash,
+                plan_hash=None,
+                actor_id=None,
+                actor_type=None,
+                decision=None,
+                supplement=None,
+                decided_at=None,
+                expires_at=None,
+            )
+            session.add(approval)
+            session.commit()
+            session.refresh(approval)
+            return approval
+
+    def load_pending_human_input_approval(self, run_id: str) -> HumanApproval | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(HumanApproval).where(
+                    HumanApproval.run_id == run_id,
+                    HumanApproval.approval_type == HUMAN_INPUT_APPROVAL_TYPE,
+                    HumanApproval.status == "pending",
+                )
+            )
+
+    def load_approval_by_challenge(self, challenge_id: str) -> HumanApproval | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(HumanApproval).where(HumanApproval.challenge_id == challenge_id)
+            )
+
+    def mark_human_input_decision(
+        self,
+        *,
+        challenge_id: str,
+        action: str,
+        actor_id: str,
+        supplement: Mapping[str, object] | None = None,
+    ) -> HumanApproval:
+        normalized_action = _normalize_human_input_action(action)
+        with self._session_factory() as session:
+            approval = session.scalar(
+                select(HumanApproval).where(HumanApproval.challenge_id == challenge_id)
+            )
+            if approval is None:
+                raise ValueError(f"unknown approval challenge_id: {challenge_id}")
+            if approval.status != "pending":
+                return approval
+
+            approval.actor_id = actor_id
+            approval.actor_type = "feishu_user"
+            approval.decision = normalized_action
+            approval.decided_at = datetime.now(timezone.utc)
+            if supplement is not None:
+                approval.supplement = dict(supplement)
+
+            approval.status = {
+                APPROVAL_ACTION_SUBMIT_HUMAN_INPUT: "approved",
+                APPROVAL_ACTION_CANCEL: "cancelled",
+                APPROVAL_ACTION_LEGACY_CANCEL: "cancelled",
+            }[normalized_action]
+            session.commit()
+            session.refresh(approval)
+            return approval
+
     def load_pending_publish_approval(self, run_id: str) -> HumanApproval | None:
         with self._session_factory() as session:
             return session.scalar(
@@ -376,6 +485,13 @@ def _normalize_publish_action(action: str) -> str:
     normalized = action.strip().casefold()
     if normalized not in PUBLISH_APPROVAL_ACTIONS:
         raise ValueError(f"unsupported publish approval action: {action}")
+    return normalized
+
+
+def _normalize_human_input_action(action: str) -> str:
+    normalized = action.strip().casefold()
+    if normalized not in HUMAN_INPUT_APPROVAL_ACTIONS:
+        raise ValueError(f"unsupported human input approval action: {action}")
     return normalized
 
 

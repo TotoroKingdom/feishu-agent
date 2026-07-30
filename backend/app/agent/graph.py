@@ -17,6 +17,10 @@ from app.approvals import (
     APPROVAL_ACTION_MODIFY,
     APPROVAL_ACTION_REJECT,
     GenerationApprovalStore,
+    HUMAN_INPUT_APPROVAL_ACTIONS,
+    APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+    HumanInputApprovalStore,
+    canonical_json_hash,
     build_generation_scope,
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
@@ -33,6 +37,7 @@ def build_workflow_graph(
     metrics_service: MetricsService | None = None,
     reporting_service: ReportingService | None = None,
     publishing_service: PublishingService | None = None,
+    human_input_store: HumanInputApprovalStore | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
     diagnostician = diagnosis_service or _MissingDiagnosisService()
@@ -40,12 +45,15 @@ def build_workflow_graph(
     metrics = metrics_service or _MissingMetricsService()
     reporter = reporting_service or _MissingReportingService()
     publisher = publishing_service or _MissingPublishingService()
+    human_store = human_input_store or _MissingHumanInputApprovalStore()
     builder = StateGraph(WorkflowState)
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
     builder.add_node("request_generation_confirmation", _request_generation_confirmation(store))
     builder.add_node("wait_generation_confirmation", _wait_generation_confirmation(store))
     builder.add_node("diagnose_problem", _diagnose_problem(diagnostician))
+    builder.add_node("request_human_input", _request_human_input(human_store))
+    builder.add_node("wait_human_input", _wait_human_input(human_store))
     builder.add_node("collect_feishu_data", _collect_feishu_data(collector))
     builder.add_node("collect_github_data", _collect_github_data(collector))
     builder.add_node("normalize_data", _normalize_data(collector))
@@ -69,12 +77,34 @@ def build_workflow_graph(
     builder.add_edge("load_project_config", "build_generation_scope")
     builder.add_edge("build_generation_scope", "request_generation_confirmation")
     builder.add_edge("request_generation_confirmation", "wait_generation_confirmation")
+    builder.add_edge("request_human_input", "wait_human_input")
     builder.add_conditional_edges(
         "wait_generation_confirmation",
         _generation_approval_route,
         {
             "build_generation_scope": "build_generation_scope",
             "collect_feishu_data": "collect_feishu_data",
+            "cancel_run": "cancel_run",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
+        "wait_human_input",
+        _human_input_route,
+        {
+            "validate_data": "validate_data",
+            "collect_feishu_data": "collect_feishu_data",
+            "collect_github_data": "collect_github_data",
+            "normalize_data": "normalize_data",
+            "calculate_metrics": "calculate_metrics",
+            "build_evidence": "build_evidence",
+            "generate_structured_report": "generate_structured_report",
+            "verify_grounding": "verify_grounding",
+            "render_report": "render_report",
+            "build_publish_plan": "build_publish_plan",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
+            "complete_run": "complete_run",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -87,6 +117,8 @@ def build_workflow_graph(
             "collect_github_data": "collect_github_data",
             "normalize_data": "normalize_data",
             "validate_data": "validate_data",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             "calculate_metrics": "calculate_metrics",
             "build_evidence": "build_evidence",
             "generate_structured_report": "generate_structured_report",
@@ -105,6 +137,8 @@ def build_workflow_graph(
             "collect_github_data": "collect_github_data",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -115,6 +149,8 @@ def build_workflow_graph(
             "normalize_data": "normalize_data",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -125,6 +161,8 @@ def build_workflow_graph(
             "validate_data": "validate_data",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -135,6 +173,8 @@ def build_workflow_graph(
             "calculate_metrics": "calculate_metrics",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -145,6 +185,8 @@ def build_workflow_graph(
             "build_evidence": "build_evidence",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -155,6 +197,8 @@ def build_workflow_graph(
             "generate_structured_report": "generate_structured_report",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -165,6 +209,8 @@ def build_workflow_graph(
             "verify_grounding": "verify_grounding",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -175,6 +221,8 @@ def build_workflow_graph(
             "render_report": "render_report",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -185,6 +233,8 @@ def build_workflow_graph(
             "build_publish_plan": "build_publish_plan",
             "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
+            "request_human_input": "request_human_input",
+            "wait_human_input": "wait_human_input",
             END: END,
         },
     )
@@ -475,6 +525,164 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
                 "scope_override": None,
             },
             "cancel_requested": decision.status == "cancelled",
+        }
+
+    return _node
+
+
+def _request_human_input(store: HumanInputApprovalStore):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        diagnosis = _require_diagnosis(state)
+        requested_fields = _human_input_requested_fields(diagnosis)
+        resume_from = _human_input_resume_from(diagnosis)
+        prompt_schema = {
+            "problem_key": str(diagnosis.get("problem_key") or diagnosis.get("active_problem_key") or ""),
+            "requested_fields": requested_fields,
+            "resume_from": resume_from,
+            "checkpoint_id": str(diagnosis.get("checkpoint_id") or ""),
+        }
+        approval_revision = int(state.get("approval_revision", 1)) + 1
+        approval = store.ensure_pending_human_input_approval(
+            run_id=state["run_id"],
+            revision=approval_revision,
+            request_payload_hash=canonical_json_hash(prompt_schema),
+            requested_from=_requested_from(state),
+        )
+        return {
+            "approval_revision": approval.revision,
+            "approval": {
+                "active_approval_ref": approval.id,
+                "approval_type": approval.approval_type,
+                "approval_revision": approval.revision,
+                "status": approval.status,
+                "approved_scope_hash": None,
+                "approved_plan_hash": None,
+                "request_payload_hash": approval.request_payload_hash,
+                "challenge_id": approval.challenge_id,
+                "requested_from": list(approval.requested_from),
+            },
+            "current_stage": "waiting_human_input",
+            "current_node": "wait_human_input",
+            "requested_action": None,
+            "resume_from": "request_human_input",
+            "control": {
+                "requested_action": None,
+                "resume_from": "request_human_input",
+                "cancel_requested": False,
+                "scope_override": None,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
+def _wait_human_input(store: HumanInputApprovalStore):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        diagnosis = _require_diagnosis(state)
+        approval = _require_approval(state)
+        requested_fields = _human_input_requested_fields(diagnosis)
+        resume_from = _human_input_resume_from(diagnosis)
+        prompt = {
+            "run_id": state["run_id"],
+            "current_stage": state["current_stage"],
+            "current_node": "wait_human_input",
+            "approval_revision": state.get("approval_revision", 1),
+            "challenge_id": approval["challenge_id"],
+            "approval_ref": approval["active_approval_ref"],
+            "presented_hash": _require_request_payload_hash(approval),
+            "problem_key": diagnosis.get("problem_key") or diagnosis.get("active_problem_key"),
+            "attempt": diagnosis.get("attempt"),
+            "reason": diagnosis.get("reason") or state.get("error_summary"),
+            "required_fields": requested_fields,
+            "resume_from": resume_from,
+            "checkpoint_id": diagnosis.get("checkpoint_id") or approval["active_approval_ref"],
+            "allowed_actions": [
+                APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+                APPROVAL_ACTION_CANCEL,
+                APPROVAL_ACTION_LEGACY_CANCEL,
+            ],
+        }
+        resume_payload = interrupt(prompt)
+        if not isinstance(resume_payload, Mapping):
+            raise ValueError("resume payload must be a mapping")
+        ensure_state_is_safe(resume_payload)
+
+        action = _normalize_human_input_action(resume_payload.get("action"))
+        challenge_id = _resume_challenge_id(resume_payload)
+        expected_challenge_id = str(approval["challenge_id"])
+        if challenge_id != expected_challenge_id:
+            raise ValueError("approval challenge_id mismatch")
+        if _resume_revision(resume_payload) != int(state.get("approval_revision", 1)):
+            raise ValueError("approval revision mismatch")
+        if _resume_presented_hash(resume_payload) != _require_request_payload_hash(approval):
+            raise ValueError("presented human input hash mismatch")
+
+        actor_id = _resume_actor_id(resume_payload, state)
+        if action in {APPROVAL_ACTION_CANCEL, APPROVAL_ACTION_LEGACY_CANCEL}:
+            decision = store.mark_human_input_decision(
+                challenge_id=challenge_id,
+                action=APPROVAL_ACTION_CANCEL,
+                actor_id=actor_id,
+            )
+            return {
+                "requested_action": APPROVAL_ACTION_CANCEL,
+                "approval": {
+                    "active_approval_ref": approval["active_approval_ref"],
+                    "approval_type": approval["approval_type"],
+                    "approval_revision": approval["approval_revision"],
+                    "status": decision.status,
+                    "approved_scope_hash": None,
+                    "approved_plan_hash": None,
+                    "request_payload_hash": approval["request_payload_hash"],
+                    "challenge_id": approval["challenge_id"],
+                    "requested_from": approval["requested_from"],
+                },
+                "current_stage": "cancelled",
+                "current_node": "complete_run",
+                "resume_from": "wait_human_input",
+                "control": {
+                    "requested_action": APPROVAL_ACTION_CANCEL,
+                    "resume_from": "wait_human_input",
+                    "cancel_requested": True,
+                    "scope_override": None,
+                },
+                "cancel_requested": True,
+            }
+
+        supplement = _resume_supplement(resume_payload, APPROVAL_ACTION_SUBMIT_HUMAN_INPUT)
+        _validate_human_input_supplement(supplement, requested_fields)
+        decision = store.mark_human_input_decision(
+            challenge_id=challenge_id,
+            action=APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+            actor_id=actor_id,
+            supplement=supplement,
+        )
+        return {
+            "requested_action": APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+            "approval": {
+                "active_approval_ref": approval["active_approval_ref"],
+                "approval_type": approval["approval_type"],
+                "approval_revision": approval["approval_revision"],
+                "status": decision.status,
+                "approved_scope_hash": None,
+                "approved_plan_hash": None,
+                "request_payload_hash": approval["request_payload_hash"],
+                "challenge_id": approval["challenge_id"],
+                "requested_from": approval["requested_from"],
+            },
+            "current_stage": _stage_for_node(resume_from),
+            "current_node": resume_from,
+            "resume_from": "wait_human_input",
+            "control": {
+                "requested_action": APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+                "resume_from": "wait_human_input",
+                "cancel_requested": False,
+                "scope_override": None,
+            },
+            "cancel_requested": False,
         }
 
     return _node
@@ -1420,6 +1628,8 @@ def _stage_for_node(node_name: str) -> str:
         "build_publish_plan": "building_publish_plan",
         "request_publish_confirmation": "requesting_publish_confirmation",
         "wait_publish_confirmation": "waiting_publish_approval",
+        "request_human_input": "requesting_human_input",
+        "wait_human_input": "waiting_human_input",
         "create_feishu_document": "publishing",
         "send_group_summary": "publishing",
         "archive_report_record": "publishing",
@@ -1497,6 +1707,8 @@ def _collection_route(state: WorkflowState) -> str:
         "request_publish_confirmation",
         "wait_publish_confirmation",
         "diagnose_problem",
+        "request_human_input",
+        "wait_human_input",
     }:
         return str(current_node)
     return END
@@ -1521,6 +1733,32 @@ def _diagnosis_route(state: WorkflowState) -> str:
         "build_publish_plan",
         "request_publish_confirmation",
         "wait_publish_confirmation",
+        "request_human_input",
+        "wait_human_input",
+        "complete_run",
+        "cancel_run",
+    }:
+        return str(current_node)
+    return END
+
+
+def _human_input_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
+    current_node = state.get("current_node")
+    if current_node in {
+        "validate_data",
+        "collect_feishu_data",
+        "collect_github_data",
+        "normalize_data",
+        "calculate_metrics",
+        "build_evidence",
+        "generate_structured_report",
+        "verify_grounding",
+        "render_report",
+        "build_publish_plan",
+        "request_human_input",
+        "wait_human_input",
         "complete_run",
         "cancel_run",
     }:
@@ -1605,6 +1843,25 @@ def _require_approval(state: Mapping[str, object]) -> dict[str, object]:
     return approval_dict
 
 
+def _require_diagnosis(state: Mapping[str, object]) -> dict[str, object]:
+    diagnosis = state.get("diagnosis")
+    if not isinstance(diagnosis, Mapping):
+        raise ValueError("diagnosis is required")
+    diagnosis_dict = dict(diagnosis)
+    required_keys = ("active_problem_key", "required_fields", "resume_from", "checkpoint_id")
+    for key in required_keys:
+        if key not in diagnosis_dict:
+            raise ValueError(f"diagnosis.{key} is required")
+    return diagnosis_dict
+
+
+def _require_request_payload_hash(approval: Mapping[str, object]) -> str:
+    value = approval.get("request_payload_hash")
+    if not isinstance(value, str) or not value:
+        raise ValueError("request_payload_hash is required")
+    return value
+
+
 def _resume_challenge_id(payload: Mapping[str, object]) -> str:
     value = payload.get("challenge_id") or payload.get("approval_ref")
     if not isinstance(value, str) or not value:
@@ -1641,12 +1898,104 @@ def _resume_scope_override(payload: Mapping[str, object]) -> dict[str, object]:
 
 
 def _resume_supplement(payload: Mapping[str, object], action: str) -> dict[str, object] | None:
-    if action != "update_supplement":
+    if action not in {"update_supplement", APPROVAL_ACTION_SUBMIT_HUMAN_INPUT}:
         return None
     supplement = payload.get("supplement") or payload.get("payload")
     if not isinstance(supplement, Mapping):
-        raise ValueError("supplement is required for update_supplement")
+        raise ValueError("supplement is required")
     return dict(supplement)
+
+
+def _human_input_requested_fields(diagnosis: Mapping[str, object]) -> list[dict[str, object]]:
+    requested_fields = diagnosis.get("required_fields")
+    if not isinstance(requested_fields, Sequence) or isinstance(
+        requested_fields, (str, bytes, bytearray)
+    ):
+        raise ValueError("diagnosis.required_fields is required")
+    fields: list[dict[str, object]] = []
+    for item in requested_fields:
+        if not isinstance(item, Mapping):
+            raise ValueError("diagnosis.required_fields must be a list of mappings")
+        field_name = item.get("name")
+        field_type = item.get("type")
+        required = item.get("required", True)
+        if not isinstance(field_name, str) or not field_name:
+            raise ValueError("diagnosis.required_fields entries require a name")
+        if field_type not in {"string", "number", "boolean", "object", "array"}:
+            raise ValueError("diagnosis.required_fields entries require a supported type")
+        if not isinstance(required, bool):
+            raise ValueError("diagnosis.required_fields entries require a boolean required flag")
+        fields.append({"name": field_name, "type": field_type, "required": required})
+    return fields
+
+
+def _human_input_resume_from(diagnosis: Mapping[str, object]) -> str:
+    value = diagnosis.get("resume_from")
+    if not isinstance(value, str) or not value:
+        raise ValueError("diagnosis.resume_from is required")
+    return value
+
+
+def _normalize_human_input_action(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("action is required")
+    normalized = value.strip().casefold()
+    aliases = {
+        APPROVAL_ACTION_SUBMIT_HUMAN_INPUT: APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+        APPROVAL_ACTION_CANCEL: APPROVAL_ACTION_CANCEL,
+        APPROVAL_ACTION_LEGACY_CANCEL: APPROVAL_ACTION_CANCEL,
+    }
+    if normalized not in HUMAN_INPUT_APPROVAL_ACTIONS:
+        raise ValueError(f"unsupported human input approval action: {value}")
+    return aliases[normalized]
+
+
+def _validate_human_input_supplement(
+    supplement: Mapping[str, object] | None,
+    requested_fields: Sequence[Mapping[str, object]],
+) -> None:
+    if supplement is None:
+        raise ValueError("supplement is required")
+    if not isinstance(supplement, Mapping):
+        raise ValueError("supplement must be a mapping")
+    allowed_names = {
+        str(field.get("name"))
+        for field in requested_fields
+        if isinstance(field.get("name"), str) and field.get("name")
+    }
+    unknown_keys = set(supplement) - allowed_names
+    if unknown_keys:
+        raise ValueError(f"unsupported supplement fields: {sorted(str(key) for key in unknown_keys)}")
+    for field in requested_fields:
+        name = field.get("name")
+        field_type = field.get("type")
+        required = field.get("required", True)
+        if not isinstance(name, str) or not name:
+            raise ValueError("diagnosis.required_fields entries require a name")
+        if not isinstance(required, bool):
+            raise ValueError("diagnosis.required_fields entries require a boolean required flag")
+        if required and name not in supplement:
+            raise ValueError(f"supplement.{name} is required")
+        if name not in supplement:
+            continue
+        value = supplement.get(name)
+        if field_type == "string":
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"supplement.{name} must be a non-empty string")
+        elif field_type == "number":
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                raise ValueError(f"supplement.{name} must be a number")
+        elif field_type == "boolean":
+            if not isinstance(value, bool):
+                raise ValueError(f"supplement.{name} must be a boolean")
+        elif field_type == "object":
+            if not isinstance(value, Mapping):
+                raise ValueError(f"supplement.{name} must be a mapping")
+        elif field_type == "array":
+            if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+                raise ValueError(f"supplement.{name} must be a list")
+        else:
+            raise ValueError("unsupported supplement field type")
 
 
 def _requested_from(state: Mapping[str, object]) -> list[str]:
@@ -1746,6 +2095,14 @@ class _MissingGenerationApprovalStore:
 
     def mark_generation_approval_decision(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
+
+
+class _MissingHumanInputApprovalStore:
+    def ensure_pending_human_input_approval(self, **_: object) -> Any:
+        raise RuntimeError("human_input_store is required")
+
+    def mark_human_input_decision(self, **_: object) -> Any:
+        raise RuntimeError("human_input_store is required")
 
 
 class _MissingDiagnosisService:
