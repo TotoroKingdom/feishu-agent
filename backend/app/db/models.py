@@ -273,6 +273,38 @@ class ValidationResult(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class DiagnosisRecord(Base):
+    __tablename__ = "diagnosis_records"
+    __table_args__ = (
+        UniqueConstraint("run_id", "problem_key", "attempt", name="uq_diagnosis_records_attempt"),
+        Index("ix_diagnosis_records_run_created_at", "run_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    validation_result_id: Mapped[str | None] = mapped_column(
+        ForeignKey("validation_results.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    problem_key: Mapped[str] = mapped_column(String(128))
+    problem_type: Mapped[str] = mapped_column(String(64))
+    severity: Mapped[str] = mapped_column(String(24))
+    observation: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    diagnosis: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    impact_scope: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    recoverability: Mapped[str] = mapped_column(String(24))
+    planned_action: Mapped[str] = mapped_column(String(64))
+    action_params: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    attempt: Mapped[int] = mapped_column(Integer)
+    result: Mapped[str] = mapped_column(String(24))
+    next_node: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
 class MetricSnapshot(Base):
     __tablename__ = "metric_snapshots"
     __table_args__ = (

@@ -45,6 +45,7 @@ class WorkflowState(TypedDict, total=False):
     scope_revision: int
     scope_override: dict[str, object]
     scope: dict[str, object]
+    diagnosis: dict[str, object]
     approval_revision: int
     approval: dict[str, object]
     publish: dict[str, object]
@@ -95,6 +96,14 @@ def build_initial_state(run_id: str) -> WorkflowState:
         "rendered_report_ref": None,
         "publish_plan_ref": None,
         "scope": {},
+        "diagnosis": {
+            "source_node": None,
+            "active_problem_key": None,
+            "retry_counters": {},
+            "diagnosis_record_refs": [],
+            "next_repair_action": None,
+            "planned_node": None,
+        },
         "approval": {
             "active_approval_ref": None,
             "approval_type": None,

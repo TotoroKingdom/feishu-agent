@@ -7,6 +7,7 @@ from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import interrupt
 
+from app.agent.diagnosis import DiagnosisOutcome, DiagnosisService
 from app.agent.state import WorkflowState, ensure_state_is_safe
 from app.approvals import (
     APPROVAL_ACTION_APPROVE,
@@ -27,12 +28,14 @@ from app.reporting.service import ReportingService, ReportStageOutcome
 def build_workflow_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     approval_store: GenerationApprovalStore | None = None,
+    diagnosis_service: DiagnosisService | None = None,
     collection_service: CollectionService | None = None,
     metrics_service: MetricsService | None = None,
     reporting_service: ReportingService | None = None,
     publishing_service: PublishingService | None = None,
 ) -> Any:
     store = approval_store or _MissingGenerationApprovalStore()
+    diagnostician = diagnosis_service or _MissingDiagnosisService()
     collector = collection_service or _MissingCollectionService()
     metrics = metrics_service or _MissingMetricsService()
     reporter = reporting_service or _MissingReportingService()
@@ -42,6 +45,7 @@ def build_workflow_graph(
     builder.add_node("build_generation_scope", _build_generation_scope)
     builder.add_node("request_generation_confirmation", _request_generation_confirmation(store))
     builder.add_node("wait_generation_confirmation", _wait_generation_confirmation(store))
+    builder.add_node("diagnose_problem", _diagnose_problem(diagnostician))
     builder.add_node("collect_feishu_data", _collect_feishu_data(collector))
     builder.add_node("collect_github_data", _collect_github_data(collector))
     builder.add_node("normalize_data", _normalize_data(collector))
@@ -76,10 +80,30 @@ def build_workflow_graph(
         },
     )
     builder.add_conditional_edges(
+        "diagnose_problem",
+        _diagnosis_route,
+        {
+            "collect_feishu_data": "collect_feishu_data",
+            "collect_github_data": "collect_github_data",
+            "normalize_data": "normalize_data",
+            "validate_data": "validate_data",
+            "calculate_metrics": "calculate_metrics",
+            "build_evidence": "build_evidence",
+            "generate_structured_report": "generate_structured_report",
+            "verify_grounding": "verify_grounding",
+            "render_report": "render_report",
+            "build_publish_plan": "build_publish_plan",
+            "complete_run": "complete_run",
+            "cancel_run": "cancel_run",
+            END: END,
+        },
+    )
+    builder.add_conditional_edges(
         "collect_feishu_data",
         _collection_route,
         {
             "collect_github_data": "collect_github_data",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -89,6 +113,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "normalize_data": "normalize_data",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -98,6 +123,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "validate_data": "validate_data",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -107,6 +133,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "calculate_metrics": "calculate_metrics",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -116,6 +143,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "build_evidence": "build_evidence",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -125,6 +153,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "generate_structured_report": "generate_structured_report",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -134,6 +163,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "verify_grounding": "verify_grounding",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -143,6 +173,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "render_report": "render_report",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -152,6 +183,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "build_publish_plan": "build_publish_plan",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -161,6 +193,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "request_publish_confirmation": "request_publish_confirmation",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -170,6 +203,7 @@ def build_workflow_graph(
         _collection_route,
         {
             "wait_publish_confirmation": "wait_publish_confirmation",
+            "diagnose_problem": "diagnose_problem",
             "cancel_run": "cancel_run",
             END: END,
         },
@@ -446,21 +480,51 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
     return _node
 
 
+def _diagnose_problem(diagnosis_service: DiagnosisService):
+    def _node(state: WorkflowState) -> dict[str, object]:
+        ensure_state_is_safe(state)
+        outcome = diagnosis_service.diagnose_problem(state)
+        if outcome.status == "blocked":
+            return {
+                "diagnosis": outcome.diagnosis_patch,
+                "current_stage": "blocked",
+                "current_node": str(state.get("diagnosis", {}).get("source_node") or state.get("current_node") or "diagnose_problem"),
+                "error_code": state.get("error_code"),
+                "error_summary": state.get("error_summary"),
+            }
+        next_node = outcome.next_node or "complete_run"
+        return {
+            "diagnosis": outcome.diagnosis_patch,
+            "current_stage": _stage_for_node(next_node),
+            "current_node": next_node,
+            "requested_action": None,
+            "resume_from": "diagnose_problem",
+            "control": {
+                "requested_action": None,
+                "resume_from": "diagnose_problem",
+                "cancel_requested": False,
+            },
+            "cancel_requested": False,
+        }
+
+    return _node
+
+
 def _collect_feishu_data(collector: CollectionService):
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         outcome = collector.collect_feishu_data(state["run_id"], _require_scope(state))
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "collect_feishu_data",
-                "source_batch_refs": _extend_unique(
+            return _diagnosis_block(
+                state,
+                source_node="collect_feishu_data",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                source_batch_refs=_extend_unique(
                     state.get("source_batch_refs", []),
                     outcome.source_batch_refs or [outcome.source_batch_ref],
                 ),
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            )
         return {
             "current_stage": "collecting_github_data",
             "current_node": "collect_github_data",
@@ -480,16 +544,16 @@ def _collect_github_data(collector: CollectionService):
         ensure_state_is_safe(state)
         outcome = collector.collect_github_data(state["run_id"], _require_scope(state))
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "collect_github_data",
-                "source_batch_refs": _extend_unique(
+            return _diagnosis_block(
+                state,
+                source_node="collect_github_data",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                source_batch_refs=_extend_unique(
                     state.get("source_batch_refs", []),
                     outcome.source_batch_refs or [outcome.source_batch_ref],
                 ),
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            )
         return {
             "current_stage": "normalizing_data",
             "current_node": "normalize_data",
@@ -509,13 +573,13 @@ def _normalize_data(collector: CollectionService):
         ensure_state_is_safe(state)
         outcome = collector.normalize_data(state["run_id"], _require_scope(state))
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "normalize_data",
-                "normalized_snapshot_ref": state.get("normalized_snapshot_ref"),
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="normalize_data",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                normalized_snapshot_ref=state.get("normalized_snapshot_ref"),
+            )
         return {
             "current_stage": "validating_data",
             "current_node": "validate_data",
@@ -532,21 +596,21 @@ def _validate_data(collector: CollectionService):
         ensure_state_is_safe(state)
         normalized_snapshot_ref = state.get("normalized_snapshot_ref")
         if not isinstance(normalized_snapshot_ref, str) or not normalized_snapshot_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "validate_data",
-                "error_code": "NORMALIZED_SNAPSHOT_MISSING",
-                "error_summary": "Normalized snapshot missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="validate_data",
+                error_code="NORMALIZED_SNAPSHOT_MISSING",
+                error_summary="Normalized snapshot missing from state",
+            )
         outcome = collector.validate_data(state["run_id"], normalized_snapshot_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "validate_data",
-                "validation_result_ref": outcome.validation_result_ref,
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="validate_data",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                validation_result_ref=outcome.validation_result_ref,
+            )
         return {
             "current_stage": "calculating_metrics",
             "current_node": "calculate_metrics",
@@ -563,20 +627,20 @@ def _calculate_metrics(metrics_service: MetricsService):
         ensure_state_is_safe(state)
         normalized_snapshot_ref = state.get("normalized_snapshot_ref")
         if not isinstance(normalized_snapshot_ref, str) or not normalized_snapshot_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "calculate_metrics",
-                "error_code": "NORMALIZED_SNAPSHOT_MISSING",
-                "error_summary": "Normalized snapshot missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="calculate_metrics",
+                error_code="NORMALIZED_SNAPSHOT_MISSING",
+                error_summary="Normalized snapshot missing from state",
+            )
         outcome = metrics_service.calculate_metrics(state["run_id"], normalized_snapshot_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "calculate_metrics",
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="calculate_metrics",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+            )
         return {
             "current_stage": "building_evidence",
             "current_node": "build_evidence",
@@ -593,21 +657,21 @@ def _build_evidence(reporter: ReportingService):
         ensure_state_is_safe(state)
         metrics_ref = state.get("metrics_ref")
         if not isinstance(metrics_ref, str) or not metrics_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "build_evidence",
-                "error_code": "METRICS_SNAPSHOT_MISSING",
-                "error_summary": "Metric snapshot missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="build_evidence",
+                error_code="METRICS_SNAPSHOT_MISSING",
+                error_summary="Metric snapshot missing from state",
+            )
         outcome = reporter.build_evidence(state["run_id"], metrics_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "build_evidence",
-                "evidence_set_ref": outcome.evidence_set_ref,
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="build_evidence",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                evidence_set_ref=outcome.evidence_set_ref,
+            )
         return {
             "current_stage": "generating_structured_report",
             "current_node": "generate_structured_report",
@@ -624,21 +688,21 @@ def _generate_structured_report(reporter: ReportingService):
         ensure_state_is_safe(state)
         evidence_set_ref = state.get("evidence_set_ref")
         if not isinstance(evidence_set_ref, str) or not evidence_set_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "generate_structured_report",
-                "error_code": "EVIDENCE_SET_MISSING",
-                "error_summary": "Evidence set missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="generate_structured_report",
+                error_code="EVIDENCE_SET_MISSING",
+                error_summary="Evidence set missing from state",
+            )
         outcome = reporter.generate_structured_report(state["run_id"], evidence_set_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "generate_structured_report",
-                "report_version_ref": outcome.report_version_ref,
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="generate_structured_report",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                report_version_ref=outcome.report_version_ref,
+            )
         return {
             "current_stage": "verifying_grounding",
             "current_node": "verify_grounding",
@@ -655,21 +719,21 @@ def _verify_grounding(reporter: ReportingService):
         ensure_state_is_safe(state)
         report_version_ref = state.get("report_version_ref")
         if not isinstance(report_version_ref, str) or not report_version_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "verify_grounding",
-                "error_code": "REPORT_VERSION_MISSING",
-                "error_summary": "Report version missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="verify_grounding",
+                error_code="REPORT_VERSION_MISSING",
+                error_summary="Report version missing from state",
+            )
         outcome = reporter.verify_grounding(state["run_id"], report_version_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "verify_grounding",
-                "report_version_ref": outcome.report_version_ref,
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="verify_grounding",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                report_version_ref=outcome.report_version_ref,
+            )
         return {
             "current_stage": "rendering_report",
             "current_node": "render_report",
@@ -686,21 +750,21 @@ def _render_report(reporter: ReportingService):
         ensure_state_is_safe(state)
         report_version_ref = state.get("report_version_ref")
         if not isinstance(report_version_ref, str) or not report_version_ref:
-            return {
-                "current_stage": "blocked",
-                "current_node": "render_report",
-                "error_code": "REPORT_VERSION_MISSING",
-                "error_summary": "Report version missing from state",
-            }
+            return _diagnosis_block(
+                state,
+                source_node="render_report",
+                error_code="REPORT_VERSION_MISSING",
+                error_summary="Report version missing from state",
+            )
         outcome = reporter.render_report(state["run_id"], report_version_ref)
         if outcome.status == "blocked":
-            return {
-                "current_stage": "blocked",
-                "current_node": "render_report",
-                "report_version_ref": outcome.report_version_ref,
-                "error_code": outcome.error_code,
-                "error_summary": outcome.error_summary,
-            }
+            return _diagnosis_block(
+                state,
+                source_node="render_report",
+                error_code=outcome.error_code,
+                error_summary=outcome.error_summary,
+                report_version_ref=outcome.report_version_ref,
+            )
         return {
             "current_stage": "report_rendered",
             "current_node": "build_publish_plan",
@@ -1338,6 +1402,65 @@ def _cancel_run(state: WorkflowState) -> dict[str, object]:
     }
 
 
+def _stage_for_node(node_name: str) -> str:
+    mapping = {
+        "load_project_config": "config_loaded",
+        "build_generation_scope": "building_generation_scope",
+        "request_generation_confirmation": "requesting_confirmation",
+        "wait_generation_confirmation": "waiting_confirmation",
+        "collect_feishu_data": "collecting_feishu_data",
+        "collect_github_data": "collecting_github_data",
+        "normalize_data": "normalizing_data",
+        "validate_data": "validating_data",
+        "calculate_metrics": "calculating_metrics",
+        "build_evidence": "building_evidence",
+        "generate_structured_report": "generating_structured_report",
+        "verify_grounding": "verifying_grounding",
+        "render_report": "rendering_report",
+        "build_publish_plan": "building_publish_plan",
+        "request_publish_confirmation": "requesting_publish_confirmation",
+        "wait_publish_confirmation": "waiting_publish_approval",
+        "create_feishu_document": "publishing",
+        "send_group_summary": "publishing",
+        "archive_report_record": "publishing",
+        "verify_side_effects": "publishing",
+        "compensate_partial_failure": "compensating",
+        "diagnose_problem": "diagnosing_problem",
+        "complete_run": "succeeded",
+        "cancel_run": "cancelled",
+    }
+    return mapping.get(node_name, "blocked")
+
+
+def _diagnosis_block(
+    state: WorkflowState,
+    *,
+    source_node: str,
+    error_code: str | None,
+    error_summary: str | None,
+    **extra: object,
+) -> dict[str, object]:
+    diagnosis = state.get("diagnosis")
+    diagnosis_patch: dict[str, object] = {}
+    if isinstance(diagnosis, Mapping):
+        diagnosis_patch.update(diagnosis)
+    diagnosis_patch.update(
+        {
+            "source_node": source_node,
+            "next_repair_action": diagnosis_patch.get("next_repair_action"),
+            "planned_node": diagnosis_patch.get("planned_node"),
+        }
+    )
+    return {
+        **extra,
+        "diagnosis": diagnosis_patch,
+        "current_stage": "diagnosing_problem",
+        "current_node": "diagnose_problem",
+        "error_code": error_code,
+        "error_summary": error_summary,
+    }
+
+
 def _generation_approval_route(state: WorkflowState) -> str:
     if state.get("cancel_requested"):
         return "cancel_run"
@@ -1373,6 +1496,33 @@ def _collection_route(state: WorkflowState) -> str:
         "build_publish_plan",
         "request_publish_confirmation",
         "wait_publish_confirmation",
+        "diagnose_problem",
+    }:
+        return str(current_node)
+    return END
+
+
+def _diagnosis_route(state: WorkflowState) -> str:
+    if state.get("cancel_requested"):
+        return "cancel_run"
+    if state.get("current_stage") == "blocked":
+        return END
+    current_node = state.get("current_node")
+    if current_node in {
+        "collect_feishu_data",
+        "collect_github_data",
+        "normalize_data",
+        "validate_data",
+        "calculate_metrics",
+        "build_evidence",
+        "generate_structured_report",
+        "verify_grounding",
+        "render_report",
+        "build_publish_plan",
+        "request_publish_confirmation",
+        "wait_publish_confirmation",
+        "complete_run",
+        "cancel_run",
     }:
         return str(current_node)
     return END
@@ -1596,6 +1746,11 @@ class _MissingGenerationApprovalStore:
 
     def mark_generation_approval_decision(self, **_: object) -> Any:
         raise RuntimeError("approval_store is required")
+
+
+class _MissingDiagnosisService:
+    def diagnose_problem(self, *_: object, **__: object) -> DiagnosisOutcome:
+        raise RuntimeError("diagnosis_service is required")
 
 
 class _MissingPublishingService:

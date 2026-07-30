@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.graph import build_workflow_graph
+from app.agent.diagnosis import DiagnosisService
 from app.agent.state import build_initial_state, thread_id_for_run
 from app.approvals import GenerationApprovalStore
 from app.collection.service import CollectionService
@@ -47,6 +48,7 @@ class WorkflowRuntime:
         self,
         session_factory: SessionFactory,
         checkpointer: Any | None = None,
+        diagnosis_service: DiagnosisService | None = None,
         collection_service: CollectionService | None = None,
         metrics_service: MetricsService | None = None,
         reporting_service: ReportingService | None = None,
@@ -54,6 +56,7 @@ class WorkflowRuntime:
     ) -> None:
         self._session_factory = session_factory
         self._approval_store = GenerationApprovalStore(session_factory)
+        self._diagnosis_service = diagnosis_service or DiagnosisService(session_factory)
         self._collection_service = collection_service or CollectionService(session_factory)
         self._metrics_service = metrics_service or MetricsService(session_factory)
         self._reporting_service = reporting_service or ReportingService(session_factory)
@@ -62,6 +65,7 @@ class WorkflowRuntime:
         self._graph = build_workflow_graph(
             self._checkpointer,
             self._approval_store,
+            self._diagnosis_service,
             self._collection_service,
             self._metrics_service,
             self._reporting_service,
