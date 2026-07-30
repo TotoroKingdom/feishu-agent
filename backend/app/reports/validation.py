@@ -22,11 +22,11 @@ def validate_normalized_entities(
     warnings: list[str] = []
     conflicts: list[dict[str, object]] = []
     seen_identity: set[tuple[str, str, str, str]] = set()
+    source_counts = {SOURCE_TYPE_FEISHU_BITABLE: 0, SOURCE_TYPE_GITHUB: 0}
     source_resource_ids = {
         SOURCE_TYPE_FEISHU_BITABLE: DEFAULT_FEISHU_RESOURCE_ID,
         SOURCE_TYPE_GITHUB: DEFAULT_GITHUB_RESOURCE_ID,
     }
-    source_counts = {SOURCE_TYPE_FEISHU_BITABLE: 0, SOURCE_TYPE_GITHUB: 0}
 
     for index, entity in enumerate(entities):
         source_type = str(entity.get("source_type") or "")
@@ -41,9 +41,11 @@ def validate_normalized_entities(
             critical_items.append(f"{source_type or 'unknown'}:{entity_type or 'unknown'}:external_id:{index}")
         if not entity.get("title"):
             warnings.append(f"{source_type or 'unknown'}:{entity_type or 'unknown'}:title:{index}")
-        if source_type == SOURCE_TYPE_GITHUB and source_resource_id and source_resource_id != source_resource_ids[SOURCE_TYPE_GITHUB]:
-            warnings.append(f"github_resource_mismatch:{source_resource_id}")
-        if source_type == SOURCE_TYPE_FEISHU_BITABLE and source_resource_id and source_resource_id != source_resource_ids[SOURCE_TYPE_FEISHU_BITABLE]:
+        if (
+            source_type == SOURCE_TYPE_FEISHU_BITABLE
+            and source_resource_id
+            and source_resource_id != source_resource_ids[SOURCE_TYPE_FEISHU_BITABLE]
+        ):
             warnings.append(f"feishu_resource_mismatch:{source_resource_id}")
         if state.lower() in {"failed", "unknown"}:
             critical_items.append(f"{source_type}:{entity_type}:state:{state or 'unknown'}")

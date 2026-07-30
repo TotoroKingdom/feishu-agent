@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
@@ -425,14 +425,20 @@ def _collect_feishu_data(collector: CollectionService):
             return {
                 "current_stage": "blocked",
                 "current_node": "collect_feishu_data",
-                "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+                "source_batch_refs": _extend_unique(
+                    state.get("source_batch_refs", []),
+                    outcome.source_batch_refs or [outcome.source_batch_ref],
+                ),
                 "error_code": outcome.error_code,
                 "error_summary": outcome.error_summary,
             }
         return {
             "current_stage": "collecting_github_data",
             "current_node": "collect_github_data",
-            "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+            "source_batch_refs": _extend_unique(
+                state.get("source_batch_refs", []),
+                outcome.source_batch_refs or [outcome.source_batch_ref],
+            ),
             "error_code": None,
             "error_summary": None,
         }
@@ -448,14 +454,20 @@ def _collect_github_data(collector: CollectionService):
             return {
                 "current_stage": "blocked",
                 "current_node": "collect_github_data",
-                "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+                "source_batch_refs": _extend_unique(
+                    state.get("source_batch_refs", []),
+                    outcome.source_batch_refs or [outcome.source_batch_ref],
+                ),
                 "error_code": outcome.error_code,
                 "error_summary": outcome.error_summary,
             }
         return {
             "current_stage": "normalizing_data",
             "current_node": "normalize_data",
-            "source_batch_refs": _append_unique(state.get("source_batch_refs", []), outcome.source_batch_ref),
+            "source_batch_refs": _extend_unique(
+                state.get("source_batch_refs", []),
+                outcome.source_batch_refs or [outcome.source_batch_ref],
+            ),
             "error_code": None,
             "error_summary": None,
         }
@@ -1398,6 +1410,22 @@ def _append_unique(existing: object, new_value: str | None) -> list[str]:
         items.extend(item for item in existing if isinstance(item, str))
     if isinstance(new_value, str) and new_value:
         items.append(new_value)
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        if item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    return deduped
+
+
+def _extend_unique(existing: object, new_values: Sequence[str | None]) -> list[str]:
+    items: list[str] = []
+    if isinstance(existing, list):
+        items.extend(item for item in existing if isinstance(item, str))
+    for value in new_values:
+        if isinstance(value, str) and value:
+            items.append(value)
     seen: set[str] = set()
     deduped: list[str] = []
     for item in items:

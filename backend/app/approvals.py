@@ -55,6 +55,7 @@ _ALLOWED_SCOPE_OVERRIDE_KEYS = {
 }
 _DEFAULT_FEISHU_RESOURCE_ID = "feishu-table-example"
 _DEFAULT_GITHUB_RESOURCE_ID = "github-repository-example"
+_MAX_GITHUB_REPOSITORIES = 5
 
 
 def canonical_json_hash(payload: Mapping[str, object]) -> str:
@@ -118,6 +119,7 @@ def merge_scope_override(
         merged["selected_repository_ids"] = _coerce_string_list(
             override["selected_repository_ids"], "selected_repository_ids"
         )
+        _validate_github_repository_limit(merged["selected_repository_ids"])
     if "feishu_resource_refs" in override:
         merged["feishu_resource_refs"] = _coerce_string_list(
             override["feishu_resource_refs"], "feishu_resource_refs"
@@ -385,6 +387,7 @@ def _build_base_scope(state: Mapping[str, object]) -> dict[str, object]:
         selected_repository_ids = _coerce_string_list(
             scope_state.get("selected_repository_ids"), "selected_repository_ids"
         )
+        _validate_github_repository_limit(selected_repository_ids)
         feishu_resource_refs = _coerce_string_list(
             scope_state.get("feishu_resource_refs"), "feishu_resource_refs"
         )
@@ -424,6 +427,13 @@ def _build_base_scope(state: Mapping[str, object]) -> dict[str, object]:
         "expected_publish_group_ref": expected_publish_group_ref,
         "read_plan": read_plan,
     }
+
+
+def _validate_github_repository_limit(repository_ids: Sequence[str]) -> None:
+    if len(repository_ids) > _MAX_GITHUB_REPOSITORIES:
+        raise ValueError(
+            f"selected_repository_ids cannot exceed {_MAX_GITHUB_REPOSITORIES} repositories"
+        )
 
 
 def _merge_report_period(
