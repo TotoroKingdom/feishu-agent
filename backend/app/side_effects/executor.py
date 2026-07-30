@@ -191,6 +191,15 @@ class SideEffectExecutor:
                     error_code="PUBLISH_PLAN_HASH_MISMATCH",
                     error_summary="Approved plan hash does not match the persisted publish plan",
                 )
+            dependency_issue = self._validate_operation_dependencies(
+                session,
+                publish_plan_id=publish_plan.id,
+                sequence=sequence,
+                current_node=handler_name,
+                next_operation_index=sequence - 1,
+            )
+            if dependency_issue is not None:
+                return dependency_issue
             operation_spec = self._operation_spec(publish_plan, sequence)
             if operation_spec["type"] != expected_operation_type:
                 return SideEffectExecutionOutcome(
@@ -383,6 +392,47 @@ class SideEffectExecutor:
         if not isinstance(operation, Mapping):
             raise ValueError("publish plan operation is invalid")
         return operation
+
+    def _validate_operation_dependencies(
+        self,
+        session: Session,
+        *,
+        publish_plan_id: str,
+        sequence: int,
+        current_node: str,
+        next_operation_index: int,
+    ) -> SideEffectExecutionOutcome | None:
+        if sequence <= 1:
+            return None
+        operations = session.scalars(
+            select(SideEffectOperation)
+            .where(
+                SideEffectOperation.publish_plan_id == publish_plan_id,
+                SideEffectOperation.sequence < sequence,
+            )
+            .order_by(SideEffectOperation.sequence)
+        ).all()
+        if len(operations) < sequence - 1:
+            return SideEffectExecutionOutcome(
+                status="blocked",
+                error_code="SIDE_EFFECT_DEPENDENCY_MISSING",
+                error_summary="Prior publish operations are required before this step can run",
+                current_stage="blocked",
+                current_node=current_node,
+                side_effect_status="waiting",
+                next_operation_index=next_operation_index,
+            )
+        if any(operation.status != "succeeded" for operation in operations):
+            return SideEffectExecutionOutcome(
+                status="blocked",
+                error_code="SIDE_EFFECT_DEPENDENCY_INCOMPLETE",
+                error_summary="A prior publish operation has not succeeded yet",
+                current_stage="blocked",
+                current_node=current_node,
+                side_effect_status="waiting",
+                next_operation_index=next_operation_index,
+            )
+        return None
 
     def _create_artifact(
         self,

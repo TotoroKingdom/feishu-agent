@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from collections.abc import Callable, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal, cast
@@ -227,7 +227,7 @@ class CollectionService:
                     error_summary="GitHub repository selection cannot exceed 5 repositories",
                 )
 
-            github_results = self._collect_github_repository_batches(scope, repository_refs)
+            github_results = _collect_github_repository_batches(self, scope, repository_refs)
             if not github_results:
                 session.commit()
                 return CollectionStageOutcome(
@@ -670,25 +670,25 @@ class CollectionService:
         return record
 
 def _fetch_status(
-    self, records: Sequence[Mapping[str, object]]
+    records: Sequence[Mapping[str, object]]
 ) -> Literal["complete", "partial", "failed"]:
-        if len(records) > MAX_SOURCE_BATCH_RECORDS:
-            return "failed"
-        statuses = {
-            str(record.get("status") or "").casefold()
-            for record in records
-            if isinstance(record, Mapping)
-        }
-        if "failed" in statuses:
-            return "failed"
-        if "unknown" in statuses:
-            return "partial"
-        return "complete"
+    if len(records) > MAX_SOURCE_BATCH_RECORDS:
+        return "failed"
+    statuses = {
+        str(record.get("status") or "").casefold()
+        for record in records
+        if isinstance(record, Mapping)
+    }
+    if "failed" in statuses:
+        return "failed"
+    if "unknown" in statuses:
+        return "partial"
+    return "complete"
 
 
 def _github_repository_refs(scope: Mapping[str, object]) -> list[str]:
     selected = scope.get("selected_repository_ids")
-    if isinstance(selected, Sequence) and not isinstance(selected, (str, bytes, bytearray)):
+    if isinstance(selected, Sequence) and not isinstance(selected, str | bytes | bytearray):
         repository_refs = [str(item).strip() for item in selected if str(item).strip()]
     else:
         repository_refs = []
@@ -721,7 +721,10 @@ def _aggregate_github_fetch_status(
 
 def _github_error_summary(results: Sequence[GitHubRepositoryBatchOutcome]) -> str:
     parts = [
-        f"{result.repository_ref}:{result.error_summary or result.error_code or result.fetch_status}"
+        (
+            f"{result.repository_ref}:"
+            f"{result.error_summary or result.error_code or result.fetch_status}"
+        )
         for result in results
         if result.fetch_status == "failed"
     ]
@@ -729,111 +732,115 @@ def _github_error_summary(results: Sequence[GitHubRepositoryBatchOutcome]) -> st
         return "GitHub repositories returned a blocked batch"
     return "; ".join(parts)
 
-    def _collect_github_repository_batches(
-        self,
-        scope: Mapping[str, object],
-        repository_refs: Sequence[str],
-    ) -> list[GitHubRepositoryBatchOutcome]:
-        results: list[GitHubRepositoryBatchOutcome] = []
-        if not repository_refs:
-            return results
 
-        max_workers = min(5, len(repository_refs))
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {
-                executor.submit(
-                    self._read_github_repository_batch, scope, repository_ref
-                ): index
-                for index, repository_ref in enumerate(repository_refs)
-            }
-            ordered: list[GitHubRepositoryBatchOutcome | None] = [None] * len(repository_refs)
-            for future in as_completed(futures):
-                index = futures[future]
-                ordered[index] = future.result()
-        for result in ordered:
-            if result is not None:
-                results.append(result)
+def _collect_github_repository_batches(
+    collection_service: CollectionService,
+    scope: Mapping[str, object],
+    repository_refs: Sequence[str],
+) -> list[GitHubRepositoryBatchOutcome]:
+    results: list[GitHubRepositoryBatchOutcome] = []
+    if not repository_refs:
         return results
 
-    def _read_github_repository_batch(
-        self, scope: Mapping[str, object], repository_ref: str
-    ) -> GitHubRepositoryBatchOutcome:
-        repository_scope = dict(scope)
-        repository_scope["selected_repository_ids"] = [repository_ref]
-        repository_scope["repository_ref"] = repository_ref
-        try:
-            github_data = self._providers.github.read_repository_core_data(repository_scope)
-        except (GitHubPermissionError, GitHubNotFoundError) as exc:
-            return self._failed_github_batch(repository_ref, exc, error_code="github_not_found")
-        except GitHubRateLimitError as exc:
-            return self._failed_github_batch(
-                repository_ref, exc, error_code="github_rate_limited"
-            )
-        except GitHubClientError as exc:
-            return self._failed_github_batch(repository_ref, exc, error_code="github_fetch_failed")
-        except TimeoutError as exc:
-            return self._failed_github_batch(repository_ref, exc, error_code="github_timeout")
-        except Exception as exc:  # pragma: no cover - defensive external boundary
-            return self._failed_github_batch(repository_ref, exc, error_code="github_fetch_failed")
+    max_workers = min(5, len(repository_refs))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(
+                _read_github_repository_batch, collection_service, scope, repository_ref
+            ): index
+            for index, repository_ref in enumerate(repository_refs)
+        }
+        ordered: list[GitHubRepositoryBatchOutcome | None] = [None] * len(repository_refs)
+        for future in as_completed(futures):
+            index = futures[future]
+            ordered[index] = future.result()
+    for result in ordered:
+        if result is not None:
+            results.append(result)
+    return results
 
-        payload = github_data.to_payload()
-        records = list(payload.get("records", []))
-        fetch_status = github_data.fetch_status or self._fetch_status(records)
-        return GitHubRepositoryBatchOutcome(
-            repository_ref=repository_ref,
-            payload=payload,
-            fetch_status=fetch_status,
-            record_count=int(payload.get("records_count") or len(records)),
-            error_code=github_data.error_code,
-            error_summary=github_data.error_summary,
+
+def _read_github_repository_batch(
+    collection_service: CollectionService,
+    scope: Mapping[str, object],
+    repository_ref: str,
+) -> GitHubRepositoryBatchOutcome:
+    repository_scope = dict(scope)
+    repository_scope["selected_repository_ids"] = [repository_ref]
+    repository_scope["repository_ref"] = repository_ref
+    try:
+        github_data = collection_service._providers.github.read_repository_core_data(
+            repository_scope
         )
+    except (GitHubPermissionError, GitHubNotFoundError) as exc:
+        return _failed_github_batch(repository_ref, exc, error_code="github_not_found")
+    except GitHubRateLimitError as exc:
+        return _failed_github_batch(repository_ref, exc, error_code="github_rate_limited")
+    except GitHubClientError as exc:
+        return _failed_github_batch(repository_ref, exc, error_code="github_fetch_failed")
+    except TimeoutError as exc:
+        return _failed_github_batch(repository_ref, exc, error_code="github_timeout")
+    except Exception as exc:  # pragma: no cover - defensive external boundary
+        return _failed_github_batch(repository_ref, exc, error_code="github_fetch_failed")
 
-    def _failed_github_batch(
-        self,
-        repository_ref: str,
-        exc: Exception,
-        *,
-        error_code: str,
-    ) -> GitHubRepositoryBatchOutcome:
-        error_summary = str(exc)
-        payload = {
-            "repository": {
-                "id": repository_ref,
-                "full_name": repository_ref,
-                "name": repository_ref.rsplit("/", 1)[-1],
-                "status": "failed",
-                "error_code": error_code,
-                "error_summary": error_summary,
-            },
-            "records": [],
-            "issues": [],
-            "pull_requests": [],
-            "commits": [],
-            "reviews": [],
-            "milestones": [],
-            "contributors": [],
-            "repository_ref": repository_ref,
-            "fetch_status": "failed",
+    payload = github_data.to_payload()
+    records = list(payload.get("records", []))
+    fetch_status = github_data.fetch_status or _fetch_status(records)
+    return GitHubRepositoryBatchOutcome(
+        repository_ref=repository_ref,
+        payload=payload,
+        fetch_status=fetch_status,
+        record_count=int(payload.get("records_count") or len(records)),
+        error_code=github_data.error_code,
+        error_summary=github_data.error_summary,
+    )
+
+
+def _failed_github_batch(
+    repository_ref: str,
+    exc: Exception,
+    *,
+    error_code: str,
+) -> GitHubRepositoryBatchOutcome:
+    error_summary = str(exc)
+    payload = {
+        "repository": {
+            "id": repository_ref,
+            "full_name": repository_ref,
+            "name": repository_ref.rsplit("/", 1)[-1],
+            "status": "failed",
             "error_code": error_code,
             "error_summary": error_summary,
-            "summary": {
-                "issue_count": 0,
-                "pull_request_count": 0,
-                "commit_count": 0,
-                "review_count": 0,
-                "milestone_count": 0,
-                "contributor_count": 0,
-            },
-            "records_count": 0,
-        }
-        return GitHubRepositoryBatchOutcome(
-            repository_ref=repository_ref,
-            payload=payload,
-            fetch_status="failed",
-            record_count=0,
-            error_code=error_code,
-            error_summary=error_summary,
-        )
+        },
+        "records": [],
+        "issues": [],
+        "pull_requests": [],
+        "commits": [],
+        "reviews": [],
+        "milestones": [],
+        "contributors": [],
+        "repository_ref": repository_ref,
+        "fetch_status": "failed",
+        "error_code": error_code,
+        "error_summary": error_summary,
+        "summary": {
+            "issue_count": 0,
+            "pull_request_count": 0,
+            "commit_count": 0,
+            "review_count": 0,
+            "milestone_count": 0,
+            "contributor_count": 0,
+        },
+        "records_count": 0,
+    }
+    return GitHubRepositoryBatchOutcome(
+        repository_ref=repository_ref,
+        payload=payload,
+        fetch_status="failed",
+        record_count=0,
+        error_code=error_code,
+        error_summary=error_summary,
+    )
 
 
 def _entity_to_dict(entity: NormalizedEntity) -> dict[str, object]:
