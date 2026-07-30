@@ -11,16 +11,22 @@ from app.reports.rendering import render_verified_report
 
 def test_render_verified_report_is_deterministic_for_equivalent_inputs() -> None:
     validated = _validated_report()
-    rendered_a = render_verified_report(validated, evidence_items=_evidence_items())
-    rendered_b = render_verified_report(validated, evidence_items=list(reversed(_evidence_items())))
+    rendered_a = render_verified_report(
+        validated,
+        evidence_items=_evidence_items(),
+    )
+    rendered_b = render_verified_report(
+        validated,
+        evidence_items=list(reversed(_evidence_items())),
+    )
 
     assert rendered_a.rendered_content == rendered_b.rendered_content
     assert rendered_a.rendered_content_hash == rendered_b.rendered_content_hash
     assert rendered_a.line_count == rendered_b.line_count
     assert "Weekly Structured Report" in rendered_a.rendered_content
     assert "Claims" in rendered_a.rendered_content
-    assert "feishu:record-1" in rendered_a.rendered_content
-    assert "github:issue-1" in rendered_a.rendered_content
+    assert "member_activity_breakdown" in rendered_a.rendered_content
+    assert "none" not in rendered_a.rendered_content
 
 
 def _validated_report() -> dict[str, object]:
@@ -36,6 +42,7 @@ def _validated_report() -> dict[str, object]:
         validation_status="complete",
         evidence_items=_evidence_items(),
         metric_values=_metric_values(),
+        member_activity_breakdown=_member_activity_breakdown(),
     )
     return validate_structured_report_payload(
         payload,
@@ -51,8 +58,39 @@ def _metric_values() -> dict[str, int]:
         "github_issue_open_count": 1,
         "github_issue_closed_count": 1,
         "github_issue_overdue_count": 0,
+        "github_pr_total_count": 1,
+        "github_pr_merged_count": 1,
+        "github_pr_long_review_count": 0,
+        "github_commit_count": 3,
         "active_contributor_count": 4,
+        "milestone_completion_rate": 50,
+        "plan_task_completion_rate": 100,
     }
+
+
+def _member_activity_breakdown() -> list[dict[str, object]]:
+    return [
+        {
+            "member_id": "contributor-a",
+            "task_count": 0,
+            "issue_count": 1,
+            "overdue_issue_count": 0,
+            "pull_request_count": 0,
+            "commit_count": 1,
+            "review_count": 0,
+            "total_activity_count": 2,
+        },
+        {
+            "member_id": "contributor-b",
+            "task_count": 1,
+            "issue_count": 0,
+            "overdue_issue_count": 0,
+            "pull_request_count": 1,
+            "commit_count": 0,
+            "review_count": 0,
+            "total_activity_count": 2,
+        },
+    ]
 
 
 def _evidence_items() -> list[dict[str, object]]:

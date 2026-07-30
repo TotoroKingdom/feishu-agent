@@ -2,8 +2,6 @@ from __future__ import annotations
 
 from datetime import date
 
-import pytest
-
 from app.reports.generation import (
     build_structured_report_payload,
     validate_structured_report_payload,
@@ -21,12 +19,20 @@ def test_grounding_verification_passes_for_matching_report() -> None:
     )
 
     assert result.status == "pass"
-    assert result.grounded_claim_count == 4
+    assert result.grounded_claim_count == 12
     assert result.claim_statuses == {
         "active_contributor_count": "verified",
-        "feishu_update_count": "verified",
+        "github_commit_count": "verified",
+        "github_issue_closed_count": "verified",
+        "github_issue_open_count": "verified",
+        "github_issue_overdue_count": "verified",
         "github_issue_summary": "verified",
-        "github_overdue_issue_count": "verified",
+        "github_pr_long_review_count": "verified",
+        "github_pr_merged_count": "verified",
+        "github_pr_total_count": "verified",
+        "member_activity_breakdown": "verified",
+        "milestone_completion_rate": "verified",
+        "plan_task_completion_rate": "verified",
     }
 
 
@@ -77,7 +83,21 @@ def test_grounding_verification_rejects_unknown_claim_key() -> None:
     assert result.error_code == "UNKNOWN_CLAIM_KEY"
 
 
-def _validated_report() -> dict[str, object]:
+def test_grounding_verification_blocks_critical_claim_without_evidence() -> None:
+    validated = _validated_report(include_github_evidence=False)
+    result = verify_structured_report_grounding(
+        validated,
+        evidence_items=_feishu_only_evidence_items(),
+        period_start=_period_start(),
+        period_end=_period_end(),
+    )
+
+    assert result.status == "blocked"
+    assert result.error_code == "GROUNDING_CRITICAL_CLAIM_UNGROUNDED"
+
+
+def _validated_report(*, include_github_evidence: bool = True) -> dict[str, object]:
+    evidence_items = _evidence_items() if include_github_evidence else _feishu_only_evidence_items()
     payload = build_structured_report_payload(
         run_id="run-123",
         period_start=_period_start(),
@@ -88,25 +108,94 @@ def _validated_report() -> dict[str, object]:
         metric_snapshot_content_hash="metric-snapshot-hash",
         evidence_set_content_hash="evidence-set-hash",
         validation_status="complete",
-        evidence_items=_evidence_items(),
-        metric_values=_metric_values(),
+        evidence_items=evidence_items,
+        metric_values=_metric_values(include_github_evidence=include_github_evidence),
+        member_activity_breakdown=_member_activity_breakdown(include_github_evidence=include_github_evidence),
     )
     return validate_structured_report_payload(
         payload,
-        expected_metric_values=_metric_values(),
-        allowed_evidence_keys=[item["evidence_key"] for item in _evidence_items()],
+        expected_metric_values=_metric_values(include_github_evidence=include_github_evidence),
+        allowed_evidence_keys=[item["evidence_key"] for item in evidence_items],
         expected_data_snapshot_hash="data-snapshot-hash",
     )
 
 
-def _metric_values() -> dict[str, int]:
+def _metric_values(*, include_github_evidence: bool = True) -> dict[str, int]:
+    if include_github_evidence:
+        return {
+            "github_issue_total_count": 2,
+            "github_issue_open_count": 1,
+            "github_issue_closed_count": 1,
+            "github_issue_overdue_count": 0,
+            "github_pr_total_count": 1,
+            "github_pr_merged_count": 1,
+            "github_pr_long_review_count": 0,
+            "github_commit_count": 3,
+            "active_contributor_count": 4,
+            "milestone_completion_rate": 50,
+            "plan_task_completion_rate": 100,
+        }
     return {
-        "github_issue_total_count": 2,
-        "github_issue_open_count": 1,
-        "github_issue_closed_count": 1,
+        "github_issue_total_count": 0,
+        "github_issue_open_count": 0,
+        "github_issue_closed_count": 0,
         "github_issue_overdue_count": 0,
-        "active_contributor_count": 4,
+        "github_pr_total_count": 0,
+        "github_pr_merged_count": 0,
+        "github_pr_long_review_count": 0,
+        "github_commit_count": 0,
+        "active_contributor_count": 2,
+        "milestone_completion_rate": 0,
+        "plan_task_completion_rate": 100,
     }
+
+
+def _member_activity_breakdown(*, include_github_evidence: bool = True) -> list[dict[str, object]]:
+    if include_github_evidence:
+        return [
+            {
+                "member_id": "contributor-a",
+                "task_count": 0,
+                "issue_count": 1,
+                "overdue_issue_count": 0,
+                "pull_request_count": 0,
+                "commit_count": 1,
+                "review_count": 0,
+                "total_activity_count": 2,
+            },
+            {
+                "member_id": "contributor-b",
+                "task_count": 1,
+                "issue_count": 0,
+                "overdue_issue_count": 0,
+                "pull_request_count": 1,
+                "commit_count": 0,
+                "review_count": 0,
+                "total_activity_count": 2,
+            },
+        ]
+    return [
+        {
+            "member_id": "user-a",
+            "task_count": 1,
+            "issue_count": 0,
+            "overdue_issue_count": 0,
+            "pull_request_count": 0,
+            "commit_count": 0,
+            "review_count": 0,
+            "total_activity_count": 1,
+        },
+        {
+            "member_id": "user-b",
+            "task_count": 1,
+            "issue_count": 0,
+            "overdue_issue_count": 0,
+            "pull_request_count": 0,
+            "commit_count": 0,
+            "review_count": 0,
+            "total_activity_count": 1,
+        },
+    ]
 
 
 def _evidence_items() -> list[dict[str, object]]:
@@ -172,6 +261,10 @@ def _evidence_items() -> list[dict[str, object]]:
             "is_overdue": False,
         },
     ]
+
+
+def _feishu_only_evidence_items() -> list[dict[str, object]]:
+    return _evidence_items()[:2]
 
 
 def _period_start() -> date:

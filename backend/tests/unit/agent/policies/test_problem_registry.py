@@ -44,7 +44,7 @@ from app.agent.policies.problem_registry import ProblemPolicyRegistry
             {},
             "permission",
             "request_human_input",
-            "blocked",
+            "continue",
             1,
         ),
         (
@@ -76,6 +76,16 @@ from app.agent.policies.problem_registry import ProblemPolicyRegistry
             "degrade_and_continue",
             "continue",
             1,
+        ),
+        (
+            "GROUNDING_CLAIM_PERIOD_MISMATCH",
+            None,
+            "verify_grounding",
+            {},
+            "grounding",
+            "repair_and_retry",
+            "retry",
+            2,
         ),
     ],
 )

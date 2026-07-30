@@ -9,11 +9,17 @@ from app.domain.source import canonical_json_hash
 RENDERING_VERSION: Final[str] = "minimal.v1"
 
 _METRIC_LABELS: Final[dict[str, str]] = {
-    "github_issue_total_count": "Total GitHub issues",
+    "github_issue_total_count": "New GitHub issues",
     "github_issue_open_count": "Open GitHub issues",
     "github_issue_closed_count": "Closed GitHub issues",
     "github_issue_overdue_count": "Overdue GitHub issues",
+    "github_pr_total_count": "GitHub pull requests",
+    "github_pr_merged_count": "Merged GitHub pull requests",
+    "github_pr_long_review_count": "Long-review GitHub pull requests",
+    "github_commit_count": "GitHub commits",
     "active_contributor_count": "Active contributors",
+    "milestone_completion_rate": "Milestone completion rate (%)",
+    "plan_task_completion_rate": "Plan task completion rate (%)",
 }
 
 
@@ -63,9 +69,13 @@ def render_verified_report(
         claim_type = str(claim.get("claim_type") or "fact")
         importance = str(claim.get("importance") or "normal")
         evidence_keys = _claim_evidence_keys(claim)
-        evidence_text = ", ".join(
-            _format_evidence_ref(evidence_key, evidence_by_key.get(evidence_key))
-            for evidence_key in evidence_keys
+        evidence_text = (
+            "none"
+            if not evidence_keys
+            else ", ".join(
+                _format_evidence_ref(evidence_key, evidence_by_key.get(evidence_key))
+                for evidence_key in evidence_keys
+            )
         )
         lines.append(f"{index}. [{importance}] {claim_content}")
         lines.append(f"   Claim key: {claim_key} ({claim_type})")

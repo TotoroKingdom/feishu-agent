@@ -98,7 +98,16 @@ class ProblemPolicyRegistry:
             return "permission"
         if _contains_any(
             (normalized_code, normalized_class),
-            ("grounding", "claim_evidence_mismatch", "unknown_claim_key"),
+            (
+                "grounding",
+                "claim_evidence_mismatch",
+                "claim_type_mismatch",
+                "claim_importance_mismatch",
+                "claim_content_mismatch",
+                "claim_period_mismatch",
+                "critical_claim_ungrounded",
+                "unknown_claim_key",
+            ),
         ):
             return "grounding"
         if _contains_any((normalized_code, normalized_class), ("llm", "model", "prompt")) and (

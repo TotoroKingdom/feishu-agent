@@ -27,7 +27,6 @@ from app.domain.source import SOURCE_TYPE_FEISHU_BITABLE, SOURCE_TYPE_GITHUB, ca
 from app.reports.generation import (
     REPORT_GENERATION_VERSION,
     REPORT_STATUS_DRAFT,
-    build_claim_specs,
     build_evidence_item_content_hash,
     build_evidence_set_content_hash,
     build_structured_report_hash,
@@ -178,6 +177,7 @@ class ReportingService:
                     error_summary="Metric or normalized snapshot missing",
                 )
             metric_values = extract_metric_values(metric_snapshot.metrics)
+            member_activity_breakdown = _member_activity_breakdown(metric_snapshot.metrics)
             validation_result = session.scalar(
                 select(ValidationResult).where(
                     ValidationResult.run_id == run_id,
@@ -215,6 +215,7 @@ class ReportingService:
                 validation_status=validation_result.data_quality_status,
                 evidence_items=evidence_item_payloads,
                 metric_values=metric_values,
+                member_activity_breakdown=member_activity_breakdown,
             )
             validated_report = validate_structured_report_payload(
                 structured_report,
@@ -468,8 +469,9 @@ class ReportingService:
                     report_version_ref=report_version.id,
                 )
 
+            claim_statuses = verification.claim_statuses or {}
             for claim in claims:
-                claim.grounding_status = "verified"
+                claim.grounding_status = claim_statuses.get(claim.claim_key, "verified")
             report_version.status = "verified"
             report_version.verified_at = report_version.verified_at or datetime.now(timezone.utc)
             report_version.model_info = {
@@ -736,6 +738,15 @@ def _structured_report_metrics(value: object) -> dict[str, int]:
         if isinstance(metric_value, int):
             metrics[str(key)] = metric_value
     return metrics
+
+
+def _member_activity_breakdown(value: object) -> list[dict[str, object]]:
+    if not isinstance(value, Mapping):
+        return []
+    breakdown = value.get("member_activity_breakdown")
+    if not isinstance(breakdown, Sequence) or isinstance(breakdown, (str, bytes, bytearray)):
+        return []
+    return [dict(item) for item in breakdown if isinstance(item, Mapping)]
 
 
 def _is_overdue_entity(entity: NormalizedEntity, period_end: datetime) -> bool:

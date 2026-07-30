@@ -124,10 +124,10 @@ def test_structured_report_and_evidence_chain_are_persisted() -> None:
         assert run_row.current_stage == "succeeded"
         assert metric_row is not None
         assert len(evidence_sets) == 1
-        assert len(evidence_items) == 4
+        assert len(evidence_items) == 13
         assert len(report_versions) == 1
-        assert len(report_claims) == 4
-        assert len(report_evidence) == 10
+        assert len(report_claims) == 12
+        assert len(report_evidence) == 127
         assert len(tool_executions) == 10
 
         report_version = report_versions[0]
@@ -138,5 +138,6 @@ def test_structured_report_and_evidence_chain_are_persisted() -> None:
         assert report_version.structured_report["metrics"] == extract_metric_values(metric_row.metrics)
         assert report_version.structured_report["evidence_set_ref"] == evidence_sets[0].id
         assert report_version.structured_report["metric_snapshot_ref"] == metric_row.id
+        assert report_version.structured_report["member_activity_breakdown"]
         assert report_version.rendered_content
         assert report_version.content_hash != report_version.structured_hash

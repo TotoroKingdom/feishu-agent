@@ -77,7 +77,13 @@ def verify_structured_report_grounding(
             )
 
     expected_metric_values = _as_metric_values(structured_report.get("metrics"))
-    expected_claim_specs = build_claim_specs(evidence_item_list, expected_metric_values)
+    expected_claim_specs = build_claim_specs(
+        evidence_item_list,
+        expected_metric_values,
+        period_start=period_start,
+        period_end=period_end,
+        member_activity_breakdown=_as_sequence(structured_report.get("member_activity_breakdown")),
+    )
     expected_claim_map = {str(spec["claim_key"]): spec for spec in expected_claim_specs}
     report_claim_map = {str(claim.get("claim_key")): dict(claim) for claim in claims}
 
@@ -107,7 +113,7 @@ def verify_structured_report_grounding(
         )
         if result is not None:
             return result
-        claim_statuses[claim_key] = "verified"
+        claim_statuses[claim_key] = _claim_status(expected)
 
     return GroundingVerificationResult(
         status="pass",
@@ -155,6 +161,18 @@ def _verify_claim(
             error_code="CLAIM_IMPORTANCE_MISMATCH",
             error_summary=f"Claim importance mismatch for {claim_key}",
         )
+    if _claim_period_text(claim, "period_start") != _claim_period_text(expected, "period_start"):
+        return GroundingVerificationResult(
+            status="blocked",
+            error_code="CLAIM_PERIOD_MISMATCH",
+            error_summary=f"Claim period mismatch for {claim_key}",
+        )
+    if _claim_period_text(claim, "period_end") != _claim_period_text(expected, "period_end"):
+        return GroundingVerificationResult(
+            status="blocked",
+            error_code="CLAIM_PERIOD_MISMATCH",
+            error_summary=f"Claim period mismatch for {claim_key}",
+        )
     if str(claim.get("content")) != str(expected.get("content")):
         return GroundingVerificationResult(
             status="blocked",
@@ -169,6 +187,12 @@ def _verify_claim(
             status="blocked",
             error_code="CLAIM_EVIDENCE_MISMATCH",
             error_summary=f"Claim evidence mismatch for {claim_key}",
+        )
+    if str(expected.get("importance")) == "critical" and not claim_evidence_keys:
+        return GroundingVerificationResult(
+            status="blocked",
+            error_code="GROUNDING_CRITICAL_CLAIM_UNGROUNDED",
+            error_summary=f"Critical claim {claim_key} has no supporting evidence",
         )
 
     for evidence_key in claim_evidence_keys:
@@ -229,3 +253,20 @@ def _as_date_text(value: object) -> str:
     if isinstance(value, date):
         return value.isoformat()
     return ""
+
+
+def _claim_period_text(claim: Mapping[str, object], key: str) -> str:
+    value = claim.get(key)
+    if isinstance(value, str):
+        return value[:10]
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return ""
+
+
+def _claim_status(expected: Mapping[str, object]) -> str:
+    if str(expected.get("claim_type")) == "needs_confirmation":
+        return "downgraded"
+    return "verified"

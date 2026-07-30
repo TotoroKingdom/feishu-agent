@@ -123,10 +123,10 @@ def test_grounding_and_rendering_are_persisted() -> None:
         assert run_row.current_stage == "succeeded"
         assert metric_row is not None
         assert len(evidence_sets) == 1
-        assert len(evidence_items) == 4
+        assert len(evidence_items) == 13
         assert len(report_versions) == 1
-        assert len(report_claims) == 4
-        assert len(report_evidence) == 10
+        assert len(report_claims) == 12
+        assert len(report_evidence) == 127
         assert len(tool_executions) == 10
 
         report_version = report_versions[0]
