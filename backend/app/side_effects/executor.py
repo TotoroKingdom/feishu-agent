@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
 
 from sqlalchemy import select
@@ -22,6 +22,7 @@ from app.db.models import (
 from app.providers.fake import FakeEffectProvider
 
 SessionFactory = Callable[[], Session]
+DEFAULT_OPERATION_LEASE_SECONDS = 300
 
 
 @dataclass(slots=True)
@@ -144,7 +145,9 @@ class SideEffectExecutor:
                 )
 
             artifacts = session.scalars(
-                select(ReportArtifact).where(ReportArtifact.operation_id.in_([operation.id for operation in operations]))
+                select(ReportArtifact).where(
+                    ReportArtifact.operation_id.in_([operation.id for operation in operations])
+                )
             ).all()
             if len(artifacts) < 3:
                 return SideEffectExecutionOutcome(
@@ -153,7 +156,7 @@ class SideEffectExecutor:
                     error_summary="One or more artifacts are missing",
                 )
 
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             for operation in operations:
                 operation.verification_status = "confirmed"
                 operation.updated_at = now
@@ -191,6 +194,7 @@ class SideEffectExecutor:
                     error_code="PUBLISH_PLAN_HASH_MISMATCH",
                     error_summary="Approved plan hash does not match the persisted publish plan",
                 )
+            now = datetime.now(UTC)
             dependency_issue = self._validate_operation_dependencies(
                 session,
                 publish_plan_id=publish_plan.id,
@@ -221,7 +225,46 @@ class SideEffectExecutor:
                 )
             )
             if existing_operation is not None:
-                if existing_operation.status != "succeeded":
+                if existing_operation.status == "succeeded":
+                    artifact = session.scalar(
+                        select(ReportArtifact).where(
+                            ReportArtifact.operation_id == existing_operation.id
+                        )
+                    )
+                    if artifact is None:
+                        artifact = self._create_artifact(
+                            session,
+                            run=run,
+                            publish_plan=publish_plan,
+                            operation=existing_operation,
+                            artifact_type=artifact_type,
+                            operation_spec=operation_spec,
+                        )
+                        session.commit()
+                    return SideEffectExecutionOutcome(
+                        status="complete",
+                        operation_ref=existing_operation.id,
+                        artifact_ref=artifact.id if artifact is not None else None,
+                        external_id=existing_operation.external_resource_id,
+                        external_url=existing_operation.external_url,
+                        provider_request_id=existing_operation.provider_request_id,
+                        current_stage="publishing",
+                        current_node=next_node,
+                        side_effect_status="executing",
+                        next_operation_index=next_operation_index,
+                    )
+                if existing_operation.status not in {"running", "claimed"}:
+                    return SideEffectExecutionOutcome(
+                        status="blocked",
+                        error_code="SIDE_EFFECT_OPERATION_FAILED",
+                        error_summary="Publish operation already failed",
+                        operation_ref=existing_operation.id,
+                        current_stage="blocked",
+                        current_node=next_node,
+                        side_effect_status="executing",
+                        next_operation_index=next_operation_index,
+                    )
+                if not _operation_claim_is_expired(existing_operation, now):
                     return SideEffectExecutionOutcome(
                         status="blocked",
                         error_code="SIDE_EFFECT_OPERATION_IN_PROGRESS",
@@ -232,56 +275,44 @@ class SideEffectExecutor:
                         side_effect_status="executing",
                         next_operation_index=next_operation_index,
                     )
-                artifact = session.scalar(
-                    select(ReportArtifact).where(ReportArtifact.operation_id == existing_operation.id)
+                existing_operation.status = "running"
+                existing_operation.attempt_count += 1
+                existing_operation.started_at = now
+                existing_operation.completed_at = None
+                existing_operation.updated_at = now
+                existing_operation.version += 1
+                existing_operation.external_resource_id = None
+                existing_operation.external_url = None
+                existing_operation.provider_request_id = None
+                existing_operation.verification_status = "pending"
+                existing_operation.last_error_class = None
+                existing_operation.last_error_summary = None
+                operation = existing_operation
+            else:
+                operation = SideEffectOperation(
+                    id=new_id(),
+                    publish_plan_id=publish_plan.id,
+                    run_id=run.id,
+                    sequence=sequence,
+                    operation_type=expected_operation_type,
+                    target_ref=_stable_ref(operation_spec["target"]),
+                    target_hash=canonical_json_hash(operation_spec["target"]),
+                    payload_ref=_stable_ref(operation_spec["payload"]),
+                    payload_hash=canonical_json_hash(operation_spec["payload"]),
+                    idempotency_key=operation_key,
+                    status="running",
+                    attempt_count=1,
+                    verification_status="pending",
+                    started_at=now,
+                    completed_at=None,
                 )
-                if artifact is None:
-                    artifact = self._create_artifact(
-                        session,
-                        run=run,
-                        publish_plan=publish_plan,
-                        operation=existing_operation,
-                        artifact_type=artifact_type,
-                        operation_spec=operation_spec,
-                    )
-                    session.commit()
-                return SideEffectExecutionOutcome(
-                    status="complete",
-                    operation_ref=existing_operation.id,
-                    artifact_ref=artifact.id if artifact is not None else None,
-                    external_id=existing_operation.external_resource_id,
-                    external_url=existing_operation.external_url,
-                    provider_request_id=existing_operation.provider_request_id,
-                    current_stage="publishing",
-                    current_node=next_node,
-                    side_effect_status="executing",
-                    next_operation_index=next_operation_index,
-                )
-
-            started_at = datetime.now(timezone.utc)
-            operation = SideEffectOperation(
-                id=new_id(),
-                publish_plan_id=publish_plan.id,
-                run_id=run.id,
-                sequence=sequence,
-                operation_type=expected_operation_type,
-                target_ref=_stable_ref(operation_spec["target"]),
-                target_hash=canonical_json_hash(operation_spec["target"]),
-                payload_ref=_stable_ref(operation_spec["payload"]),
-                payload_hash=canonical_json_hash(operation_spec["payload"]),
-                idempotency_key=operation_key,
-                status="running",
-                attempt_count=1,
-                verification_status="pending",
-                started_at=started_at,
-                completed_at=None,
-            )
-            session.add(operation)
-            session.flush()
+                session.add(operation)
+                session.flush()
+            attempt_number = operation.attempt_count
             attempt = SideEffectAttempt(
                 id=new_id(),
                 operation_id=operation.id,
-                attempt=1,
+                attempt=attempt_number,
                 status="started",
                 request_summary={
                     "publish_plan_ref": publish_plan.id,
@@ -292,27 +323,30 @@ class SideEffectExecutor:
                 provider_request_id=None,
                 response_summary={},
                 error_class=None,
-                started_at=started_at,
+                started_at=now,
                 ended_at=None,
             )
             session.add(attempt)
             session.flush()
+            session.commit()
 
             handler = getattr(self._effect_provider, handler_name)
-            handler_arg = _operation_handler_argument(operation_spec, handler_argument_field, run.id)
+            handler_arg = _operation_handler_argument(
+                operation_spec, handler_argument_field, run.id
+            )
             response = handler(handler_arg)
             response_status = str(response.get("status", "unknown"))
             response_summary = dict(response)
             attempt.response_summary = response_summary
             attempt.provider_request_id = cast(str | None, response.get("provider_request_id"))
-            attempt.ended_at = datetime.now(timezone.utc)
+            attempt.ended_at = datetime.now(UTC)
 
             if response_status != "success":
                 error_class = cast(str | None, response.get("error_class")) or "provider_error"
                 operation.status = "failed"
                 operation.last_error_class = error_class
                 operation.last_error_summary = response_status
-                operation.completed_at = datetime.now(timezone.utc)
+                operation.completed_at = datetime.now(UTC)
                 operation.updated_at = operation.completed_at
                 attempt.status = "failed"
                 attempt.error_class = error_class
@@ -332,12 +366,12 @@ class SideEffectExecutor:
             external_url = cast(str | None, response.get("url"))
             provider_request_id = cast(str | None, response.get("provider_request_id"))
             operation.status = "succeeded"
-            operation.attempt_count = 1
+            operation.attempt_count = attempt_number
             operation.external_resource_id = external_id
             operation.external_url = external_url
             operation.provider_request_id = provider_request_id
             operation.verification_status = "pending"
-            operation.completed_at = datetime.now(timezone.utc)
+            operation.completed_at = datetime.now(UTC)
             operation.updated_at = operation.completed_at
             attempt.status = "succeeded"
 
@@ -532,3 +566,20 @@ def _artifact_content_hash(operation_spec: Mapping[str, object]) -> str:
             return cast(str, payload["content_hash"])
         return canonical_json_hash(payload)
     return canonical_json_hash(operation_spec)
+
+
+def _operation_claim_is_expired(
+    operation: SideEffectOperation,
+    now: datetime,
+    *,
+    lease_seconds: int = DEFAULT_OPERATION_LEASE_SECONDS,
+) -> bool:
+    started_at = operation.started_at
+    if started_at is None:
+        return True
+    if started_at.tzinfo is None:
+        started_at = started_at.replace(tzinfo=UTC)
+    else:
+        started_at = started_at.astimezone(UTC)
+    current_time = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return current_time - started_at >= timedelta(seconds=lease_seconds)
