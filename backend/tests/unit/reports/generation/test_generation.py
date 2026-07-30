@@ -105,6 +105,62 @@ def test_structured_report_payload_rejects_unknown_evidence_keys() -> None:
         )
 
 
+def test_structured_report_payload_rejects_extra_fields() -> None:
+    evidence_items = _evidence_items()
+    metric_values = _metric_values()
+    payload = build_structured_report_payload(
+        run_id="run-123",
+        period_start=_period_start(),
+        period_end=_period_end(),
+        metric_snapshot_ref="metric-snapshot-1",
+        evidence_set_ref="evidence-set-1",
+        data_snapshot_hash="data-snapshot-hash",
+        metric_snapshot_content_hash="metric-snapshot-hash",
+        evidence_set_content_hash="evidence-set-hash",
+        validation_status="complete",
+        evidence_items=evidence_items,
+        metric_values=metric_values,
+        member_activity_breakdown=_member_activity_breakdown(),
+    )
+    payload["tool"] = "create_feishu_document"  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="Extra inputs"):
+        validate_structured_report_payload(
+            payload,
+            expected_metric_values=metric_values,
+            allowed_evidence_keys=[item["evidence_key"] for item in evidence_items],
+            expected_data_snapshot_hash="data-snapshot-hash",
+        )
+
+
+def test_structured_report_payload_rejects_duplicate_claim_keys() -> None:
+    evidence_items = _evidence_items()
+    metric_values = _metric_values()
+    payload = build_structured_report_payload(
+        run_id="run-123",
+        period_start=_period_start(),
+        period_end=_period_end(),
+        metric_snapshot_ref="metric-snapshot-1",
+        evidence_set_ref="evidence-set-1",
+        data_snapshot_hash="data-snapshot-hash",
+        metric_snapshot_content_hash="metric-snapshot-hash",
+        evidence_set_content_hash="evidence-set-hash",
+        validation_status="complete",
+        evidence_items=evidence_items,
+        metric_values=metric_values,
+        member_activity_breakdown=_member_activity_breakdown(),
+    )
+    payload["claims"].append(dict(payload["claims"][0]))  # type: ignore[index]
+
+    with pytest.raises(ValueError, match="duplicate claim keys"):
+        validate_structured_report_payload(
+            payload,
+            expected_metric_values=metric_values,
+            allowed_evidence_keys=[item["evidence_key"] for item in evidence_items],
+            expected_data_snapshot_hash="data-snapshot-hash",
+        )
+
+
 def _metric_values() -> dict[str, int]:
     return {
         "github_issue_total_count": 2,

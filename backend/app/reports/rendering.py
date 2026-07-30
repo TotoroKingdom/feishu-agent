@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from app.domain.source import canonical_json_hash
+from app.llm.policies import sanitize_prompt_text
 
 RENDERING_VERSION: Final[str] = "minimal.v1"
 
@@ -36,10 +37,12 @@ def render_verified_report(
     evidence_items: Sequence[Mapping[str, object]],
     report_version: int = 1,
 ) -> RenderedReport:
-    report_title = str(structured_report.get("report_title") or "Weekly Structured Report")
-    summary = str(structured_report.get("summary") or "")
-    period_start = str(structured_report.get("period_start") or "")
-    period_end = str(structured_report.get("period_end") or "")
+    report_title = sanitize_prompt_text(
+        structured_report.get("report_title"), max_length=128
+    ) or "Weekly Structured Report"
+    summary = sanitize_prompt_text(structured_report.get("summary"), max_length=1024)
+    period_start = sanitize_prompt_text(structured_report.get("period_start"), max_length=32)
+    period_end = sanitize_prompt_text(structured_report.get("period_end"), max_length=32)
     metrics = _as_metrics(structured_report.get("metrics"))
     claims = _as_claims(structured_report.get("claims"))
     evidence_by_key = {
@@ -64,10 +67,10 @@ def render_verified_report(
 
     lines.extend(["", "Claims"])
     for index, claim in enumerate(claims, start=1):
-        claim_key = str(claim.get("claim_key") or f"claim-{index}")
-        claim_content = str(claim.get("content") or "")
-        claim_type = str(claim.get("claim_type") or "fact")
-        importance = str(claim.get("importance") or "normal")
+        claim_key = sanitize_prompt_text(claim.get("claim_key"), max_length=128) or f"claim-{index}"
+        claim_content = sanitize_prompt_text(claim.get("content"), max_length=512)
+        claim_type = sanitize_prompt_text(claim.get("claim_type"), max_length=32) or "fact"
+        importance = sanitize_prompt_text(claim.get("importance"), max_length=32) or "normal"
         evidence_keys = _claim_evidence_keys(claim)
         evidence_text = (
             "none"
@@ -121,13 +124,13 @@ def _claim_evidence_keys(claim: Mapping[str, object]) -> list[str]:
     values = claim.get("evidence_keys", [])
     if not isinstance(values, Sequence) or isinstance(values, (str, bytes, bytearray)):
         return []
-    return [str(value) for value in values if isinstance(value, str) and value]
+    return [sanitize_prompt_text(value, max_length=128) for value in values if isinstance(value, str) and value]
 
 
 def _format_evidence_ref(evidence_key: str, evidence_item: Mapping[str, object] | None) -> str:
     if evidence_item is None:
         return evidence_key
-    summary = str(evidence_item.get("evidence_summary") or "").strip()
+    summary = sanitize_prompt_text(evidence_item.get("evidence_summary"), max_length=256)
     if summary:
         return f"{evidence_key} ({summary})"
     return evidence_key

@@ -4,8 +4,14 @@ from collections.abc import Mapping, Sequence
 from datetime import date
 from typing import Final, Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.llm.policies import (
+    sanitize_evidence_item_payload,
+    sanitize_member_activity_breakdown,
+    sanitize_prompt_identifier,
+    sanitize_prompt_text,
+)
 from app.domain.metrics import METRIC_KEYS, METRICS_DEFINITION_VERSION
 from app.domain.source import canonical_json_hash
 
@@ -19,32 +25,37 @@ REPORT_CLAIM_IMPORTANCE_NORMAL: Final[str] = "normal"
 
 
 class ReportClaimSchema(BaseModel):
-    claim_key: str = Field(min_length=1)
-    content: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+    claim_key: str = Field(min_length=1, max_length=128)
+    content: str = Field(min_length=1, max_length=512)
     claim_type: Literal["fact", "inference", "needs_confirmation"]
     importance: Literal["critical", "normal"]
-    period_start: str = Field(min_length=1)
-    period_end: str = Field(min_length=1)
+    period_start: str = Field(min_length=1, max_length=32)
+    period_end: str = Field(min_length=1, max_length=32)
     confidence: float = Field(ge=0.0, le=1.0)
     evidence_keys: list[str]
 
 
 class StructuredReportSchema(BaseModel):
-    schema_version: str = Field(min_length=1)
-    report_title: str = Field(min_length=1)
-    summary: str = Field(min_length=1)
-    period_start: str = Field(min_length=1)
-    period_end: str = Field(min_length=1)
-    metric_snapshot_ref: str = Field(min_length=1)
-    evidence_set_ref: str = Field(min_length=1)
-    data_snapshot_hash: str = Field(min_length=1)
-    definition_version: str = Field(min_length=1)
-    validation_status: str = Field(min_length=1)
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = Field(min_length=1, max_length=32)
+    report_title: str = Field(min_length=1, max_length=128)
+    summary: str = Field(min_length=1, max_length=1024)
+    period_start: str = Field(min_length=1, max_length=32)
+    period_end: str = Field(min_length=1, max_length=32)
+    metric_snapshot_ref: str = Field(min_length=1, max_length=128)
+    evidence_set_ref: str = Field(min_length=1, max_length=128)
+    data_snapshot_hash: str = Field(min_length=1, max_length=128)
+    definition_version: str = Field(min_length=1, max_length=64)
+    validation_status: str = Field(min_length=1, max_length=32)
     metrics: dict[str, int]
     claims: list[ReportClaimSchema]
     evidence_keys: list[str]
     source_summary: dict[str, int]
     member_activity_breakdown: list[dict[str, object]] = Field(default_factory=list)
+    structured_hash: str = Field(min_length=1, max_length=64)
 
 
 def build_structured_report_payload(
@@ -63,9 +74,9 @@ def build_structured_report_payload(
     member_activity_breakdown: Sequence[Mapping[str, object]] | None = None,
 ) -> dict[str, object]:
     allowed_metric_values = _normalize_metric_values(metric_values)
-    evidence_item_list = [dict(item) for item in evidence_items]
+    evidence_item_list = [sanitize_evidence_item_payload(item) for item in evidence_items]
     evidence_keys = [str(item["evidence_key"]) for item in evidence_item_list]
-    breakdown_list = [dict(item) for item in (member_activity_breakdown or [])]
+    breakdown_list = sanitize_member_activity_breakdown(member_activity_breakdown or [])
     claim_specs = _build_claim_specs(
         evidence_item_list,
         allowed_metric_values,
@@ -77,14 +88,14 @@ def build_structured_report_payload(
     payload: dict[str, object] = {
         "schema_version": REPORT_GENERATION_VERSION,
         "report_title": "Weekly Structured Report",
-        "summary": summary,
-        "period_start": period_start.isoformat(),
-        "period_end": period_end.isoformat(),
-        "metric_snapshot_ref": metric_snapshot_ref,
-        "evidence_set_ref": evidence_set_ref,
-        "data_snapshot_hash": data_snapshot_hash,
+        "summary": sanitize_prompt_text(summary, max_length=1024),
+        "period_start": sanitize_prompt_identifier(period_start.isoformat(), max_length=32),
+        "period_end": sanitize_prompt_identifier(period_end.isoformat(), max_length=32),
+        "metric_snapshot_ref": sanitize_prompt_identifier(metric_snapshot_ref, max_length=128),
+        "evidence_set_ref": sanitize_prompt_identifier(evidence_set_ref, max_length=128),
+        "data_snapshot_hash": sanitize_prompt_identifier(data_snapshot_hash, max_length=128),
         "definition_version": METRICS_DEFINITION_VERSION,
-        "validation_status": validation_status,
+        "validation_status": sanitize_prompt_identifier(validation_status, max_length=32),
         "metrics": allowed_metric_values,
         "claims": claim_specs,
         "evidence_keys": evidence_keys,
@@ -122,7 +133,12 @@ def validate_structured_report_payload(
     allowed_keys = set(allowed_evidence_keys)
     if not allowed_keys:
         raise ValueError("structured report requires evidence keys")
+    claim_keys = [claim.claim_key for claim in schema.claims]
+    if len(claim_keys) != len(set(claim_keys)):
+        raise ValueError("duplicate claim keys")
     for claim in schema.claims:
+        if len(claim.evidence_keys) != len(set(claim.evidence_keys)):
+            raise ValueError(f"duplicate evidence keys for claim {claim.claim_key}")
         if claim.period_start != schema.period_start or claim.period_end != schema.period_end:
             raise ValueError(f"claim {claim.claim_key} period does not match report period")
         unknown = set(claim.evidence_keys) - allowed_keys
@@ -130,8 +146,11 @@ def validate_structured_report_payload(
             raise ValueError(
                 f"claim {claim.claim_key} references unknown evidence keys: {sorted(unknown)}"
             )
+    expected_hash = build_structured_report_hash(schema.model_dump())
+    if schema.structured_hash != expected_hash:
+        raise ValueError("structured report hash mismatch")
     validated = schema.model_dump()
-    validated["structured_hash"] = build_structured_report_hash(validated)
+    validated["structured_hash"] = expected_hash
     return validated
 
 
@@ -379,19 +398,26 @@ def _claim_spec(
     period_start: str,
     period_end: str,
 ) -> dict[str, object]:
-    normalized_evidence_keys = [key for key in evidence_keys if key]
+    normalized_evidence_keys: list[str] = []
+    seen_keys: set[str] = set()
+    for key in evidence_keys:
+        normalized_key = sanitize_prompt_identifier(key, max_length=128)
+        if not normalized_key or normalized_key in seen_keys:
+            continue
+        seen_keys.add(normalized_key)
+        normalized_evidence_keys.append(normalized_key)
     final_claim_type = claim_type
     final_confidence = confidence
     if not normalized_evidence_keys and importance != REPORT_CLAIM_IMPORTANCE_CRITICAL:
         final_claim_type = REPORT_CLAIM_TYPE_NEEDS_CONFIRMATION
         final_confidence = min(final_confidence, 0.45)
     return {
-        "claim_key": claim_key,
-        "content": content,
+        "claim_key": sanitize_prompt_identifier(claim_key, max_length=128),
+        "content": sanitize_prompt_text(content, max_length=512),
         "claim_type": final_claim_type,
         "importance": importance,
-        "period_start": period_start,
-        "period_end": period_end,
+        "period_start": sanitize_prompt_identifier(period_start, max_length=32),
+        "period_end": sanitize_prompt_identifier(period_end, max_length=32),
         "confidence": final_confidence,
         "evidence_keys": normalized_evidence_keys,
     }
@@ -424,7 +450,7 @@ def _format_member_activity_breakdown(
         return ""
     parts: list[str] = []
     for item in member_activity_breakdown[:5]:
-        member_id = str(item.get("member_id") or "unknown")
+        member_id = sanitize_prompt_identifier(item.get("member_id"), max_length=80) or "unknown"
         task_count = _int_value(item.get("task_count"))
         issue_count = _int_value(item.get("issue_count"))
         overdue_count = _int_value(item.get("overdue_issue_count"))
@@ -446,11 +472,11 @@ def _period_text(
     key: str,
 ) -> str:
     if explicit_value is not None:
-        return explicit_value.isoformat()
+        return sanitize_prompt_identifier(explicit_value.isoformat(), max_length=32)
     for item in evidence_items:
         value = item.get(key)
         if isinstance(value, str) and value:
-            return value[:10]
+            return sanitize_prompt_identifier(value[:10], max_length=32)
     return ""
 
 

@@ -24,6 +24,7 @@ from app.db.models import (
 )
 from app.domain.metrics import METRICS_DEFINITION_VERSION
 from app.domain.source import SOURCE_TYPE_FEISHU_BITABLE, SOURCE_TYPE_GITHUB, canonical_json_hash
+from app.llm.policies import sanitize_evidence_item_payload
 from app.reports.generation import (
     REPORT_GENERATION_VERSION,
     REPORT_STATUS_DRAFT,
@@ -691,29 +692,31 @@ def _build_evidence_item_payload(
         "evidence_summary": entity.raw_summary or entity.title or entity.external_id,
         "confidence": 1.0 if entity.source_type == SOURCE_TYPE_FEISHU_BITABLE else 0.95,
         "normalized_entity_id": entity.id,
-        "content_hash": build_evidence_item_content_hash(
-            {
-                "source_type": entity.source_type,
-                "source_resource_id": entity.source_resource_id,
-                "external_id": entity.external_id,
-                "url": entity.url,
-                "period_start": run.period_start.isoformat(),
-                "period_end": run.period_end.isoformat(),
-                "evidence_summary": entity.raw_summary or entity.title or entity.external_id,
-                "confidence": 1.0 if entity.source_type == SOURCE_TYPE_FEISHU_BITABLE else 0.95,
-                "normalized_entity_id": entity.id,
-                "is_overdue": is_overdue,
-                "metric_snapshot_id": metric_snapshot.id,
-            }
-        ),
         "state": entity.state,
         "is_overdue": is_overdue,
     }
-    return payload
+    sanitized = sanitize_evidence_item_payload(payload)
+    sanitized["content_hash"] = build_evidence_item_content_hash(
+        {
+            "source_type": sanitized["source_type"],
+            "source_resource_id": sanitized["source_resource_id"],
+            "external_id": sanitized["external_id"],
+            "url": sanitized["url"],
+            "period_start": run.period_start.isoformat(),
+            "period_end": run.period_end.isoformat(),
+            "evidence_summary": sanitized["evidence_summary"],
+            "confidence": sanitized["confidence"],
+            "normalized_entity_id": sanitized["normalized_entity_id"],
+            "is_overdue": sanitized["is_overdue"],
+            "metric_snapshot_id": metric_snapshot.id,
+        }
+    )
+    return sanitized
 
 
 def _evidence_item_to_payload(item: EvidenceItem) -> dict[str, object]:
-    return {
+    return sanitize_evidence_item_payload(
+        {
         "evidence_key": item.evidence_key,
         "source_type": item.source_type,
         "source_resource_id": item.source_resource_id,
@@ -727,7 +730,8 @@ def _evidence_item_to_payload(item: EvidenceItem) -> dict[str, object]:
         "content_hash": item.content_hash,
         "state": None,
         "is_overdue": False,
-    }
+        }
+    )
 
 
 def _structured_report_metrics(value: object) -> dict[str, int]:
