@@ -25,6 +25,7 @@ from app.db.models import (
 )
 from app.domain.runs import RunCreationService
 from app.main import create_app
+from tests.admin_auth import authenticate_admin
 
 _FORBIDDEN_FRAGMENTS = ("secret", "token", "password", "api_key", "apikey", "credential", "client_secret")
 
@@ -52,6 +53,7 @@ def _make_environment() -> tuple[TestClient, sessionmaker[Session], str, Workflo
     client = TestClient(
         create_app(settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory)
     )
+    authenticate_admin(client)
     runtime = WorkflowRuntime(factory, MemorySaver())
     return client, factory, run.id, runtime
 
@@ -155,7 +157,10 @@ def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
             select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(SideEffectOperation.sequence)
         ).all()
         artifacts = session.scalars(
-            select(ReportArtifact).where(ReportArtifact.run_id == run_id).order_by(ReportArtifact.created_at)
+            select(ReportArtifact)
+            .join(SideEffectOperation)
+            .where(ReportArtifact.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
         ).all()
         tools = session.scalars(select(ToolExecution).where(ToolExecution.run_id == run_id)).all()
 

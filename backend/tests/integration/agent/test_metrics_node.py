@@ -93,5 +93,5 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
         assert run_row.status == "completed"
         assert run_row.current_stage == "succeeded"
         assert len(metric_snapshots) == 1
-        assert metric_snapshots[0].definition_version == "minimal.v1"
+        assert metric_snapshots[0].definition_version == "prd.v1"
         assert len(tool_executions) == 10

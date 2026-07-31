@@ -1,6 +1,8 @@
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 
 import { RunDetailPanel } from "@/components/run-detail-panel";
+import { buildAdminRequestInit } from "@/lib/admin-auth";
 import { getBackendBaseUrl } from "@/lib/backend-url";
 import type { RunDetailEnvelope } from "@/lib/run-detail";
 
@@ -11,9 +13,16 @@ type PageProps = {
 };
 
 async function loadRunDetail(runId: string): Promise<RunDetailEnvelope | null> {
-  const response = await fetch(`${getBackendBaseUrl()}/api/v1/admin/runs/${encodeURIComponent(runId)}`, {
-    cache: "no-store",
-  });
+  const cookieHeader = serializeCookies();
+  const response = await fetch(
+    `${getBackendBaseUrl()}/api/v1/admin/runs/${encodeURIComponent(runId)}`,
+    buildAdminRequestInit(
+      {
+        cache: "no-store",
+      },
+      { cookieHeader },
+    ),
+  );
 
   if (response.status === 404) {
     return null;
@@ -24,6 +33,13 @@ async function loadRunDetail(runId: string): Promise<RunDetailEnvelope | null> {
   }
 
   return (await response.json()) as RunDetailEnvelope;
+}
+
+function serializeCookies(): string {
+  return cookies()
+    .getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join("; ");
 }
 
 export default async function RunDetailPage({ params }: PageProps) {

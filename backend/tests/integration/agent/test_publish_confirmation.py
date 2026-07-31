@@ -123,7 +123,7 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
         assert run_row.status == "completed"
         assert run_row.current_stage == "succeeded"
         assert publish_plan is not None
-        assert publish_plan.status == "approved"
+        assert publish_plan.status == "completed"
         assert run_row.approved_publish_plan_id == publish_plan.id
         assert report_version is not None
         assert len(approvals) == 2

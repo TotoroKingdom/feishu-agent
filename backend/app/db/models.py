@@ -26,6 +26,54 @@ def new_id() -> str:
     return str(uuid4())
 
 
+class AdminUser(Base):
+    __tablename__ = "admin_users"
+    __table_args__ = (UniqueConstraint("username", name="uq_admin_users_username"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    username: Mapped[str] = mapped_column(String(64))
+    password_hash: Mapped[str] = mapped_column(String(256))
+    status: Mapped[str] = mapped_column(String(16), default="active")
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AdminSession(Base):
+    __tablename__ = "admin_sessions"
+    __table_args__ = (
+        UniqueConstraint("refresh_token_hash", name="uq_admin_sessions_refresh_token_hash"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    admin_user_id: Mapped[str] = mapped_column(ForeignKey("admin_users.id", ondelete="CASCADE"))
+    refresh_token_hash: Mapped[str] = mapped_column(String(64))
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+
+class LoginAudit(Base):
+    __tablename__ = "login_audits"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    admin_user_id: Mapped[str | None] = mapped_column(
+        ForeignKey("admin_users.id", ondelete="SET NULL"), nullable=True
+    )
+    username: Mapped[str] = mapped_column(String(64))
+    success: Mapped[bool] = mapped_column(Boolean, default=False)
+    failure_reason: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_agent_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Project(Base):
     __tablename__ = "projects"
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -65,6 +113,28 @@ class ProjectRepository(Base):
     )
     __table_args__ = (
         UniqueConstraint("project_id", "provider", "external_id", name="uq_project_repo"),
+    )
+
+
+class ScheduleConfig(Base):
+    __tablename__ = "schedule_configs"
+    __table_args__ = (
+        UniqueConstraint("project_id", name="uq_schedule_configs_project_id"),
+        Index("ix_schedule_configs_enabled_next_fire_at", "enabled", "next_fire_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
+    cron_expression: Mapped[str] = mapped_column(String(128))
+    timezone: Mapped[str] = mapped_column(String(64))
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    misfire_policy: Mapped[str] = mapped_column(String(24), default="fire_once")
+    next_fire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_fire_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
@@ -424,6 +494,87 @@ class DiagnosisRecord(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class NodeExecution(Base):
+    __tablename__ = "node_executions"
+    __table_args__ = (
+        UniqueConstraint("run_id", "node_name", "node_attempt", name="uq_node_executions_attempt"),
+        Index("ix_node_executions_run_started", "run_id", "started_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    node_name: Mapped[str] = mapped_column(String(80))
+    node_attempt: Mapped[int] = mapped_column(Integer)
+    checkpoint_before: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    checkpoint_after: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    status: Mapped[str] = mapped_column(String(20))
+    input_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    output_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    error_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class LlmExecution(Base):
+    __tablename__ = "llm_executions"
+    __table_args__ = (
+        Index("ix_llm_executions_run_created", "run_id", "created_at"),
+        Index("ix_llm_executions_node_created", "node_execution_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
+    )
+    node_execution_id: Mapped[str] = mapped_column(String(128))
+    provider: Mapped[str] = mapped_column(String(64))
+    model: Mapped[str] = mapped_column(String(128))
+    prompt_type: Mapped[str] = mapped_column(String(32))
+    prompt_version_id: Mapped[str | None] = mapped_column(
+        ForeignKey("prompt_versions.id"), nullable=True, index=True
+    )
+    input_hash: Mapped[str] = mapped_column(String(64))
+    output_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(24))
+    schema_valid: Mapped[bool] = mapped_column(Boolean, default=False)
+    input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    output_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_run_occurred_at", "run_id", "occurred_at"),
+        Index("ix_audit_logs_actor_occurred_at", "actor_id", "occurred_at"),
+        Index("ix_audit_logs_action_occurred_at", "action", "occurred_at"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    actor_type: Mapped[str] = mapped_column(String(32))
+    actor_id: Mapped[str] = mapped_column(String(128))
+    action: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str] = mapped_column(String(64))
+    resource_id: Mapped[str] = mapped_column(String(128))
+    before_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    after_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    result: Mapped[str] = mapped_column(String(24))
+    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSON, default=dict)
+
+
 class MetricSnapshot(Base):
     __tablename__ = "metric_snapshots"
     __table_args__ = (
@@ -780,6 +931,8 @@ class ToolExecution(Base):
     __tablename__ = "tool_executions"
     __table_args__ = (
         UniqueConstraint("run_id", "idempotency_key", "attempt", name="uq_tool_executions_attempt"),
+        Index("ix_tool_executions_run_started", "run_id", "started_at"),
+        Index("ix_tool_executions_tool_status_started", "tool_name", "status", "started_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)

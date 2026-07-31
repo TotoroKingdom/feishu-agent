@@ -8,6 +8,7 @@ const targetFiles = {
   "feishu-resource-mapping": "../tests/feishu-resource-mapping.test.mjs",
   credentials: "../tests/credentials.test.mjs",
   "config-confirmation": "../tests/config-confirmation.test.mjs",
+  auth: "../tests/auth.test.mjs",
 };
 
 const relativeTestFile = targetFiles[target];

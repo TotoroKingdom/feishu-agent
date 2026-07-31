@@ -19,6 +19,7 @@ import {
   type RepositoryConfig,
   type RepositoryConfigurationSummary,
 } from "@/lib/configuration";
+import { buildAdminRequestInit } from "@/lib/admin-auth";
 
 export type ProjectConfig = {
   id: string;
@@ -203,14 +204,21 @@ async function readError(response: Response): Promise<string> {
 }
 
 async function requestJson<T>(input: RequestInfo | URL, init?: RequestInit): Promise<T> {
-  const response = await fetch(input, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
-    },
-    cache: "no-store",
-  });
+  const response = await fetch(
+    input,
+    buildAdminRequestInit(
+      {
+        ...init,
+        headers: {
+          "Content-Type": "application/json",
+          ...(init?.headers ?? {}),
+        },
+        cache: "no-store",
+        credentials: "include",
+      },
+      {},
+    ),
+  );
 
   if (!response.ok) {
     throw new Error(await readError(response));

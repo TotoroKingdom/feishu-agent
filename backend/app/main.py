@@ -1,4 +1,5 @@
 import re
+import hmac
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import date
 from uuid import uuid4
@@ -26,9 +27,24 @@ from app.admin.configuration import (
     RepositoryUpdateRequest,
     RevisionConflictError,
 )
+from app.admin.auth import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    AdminAuthService,
+    AdminAuthenticationError,
+    AdminAuthPayload,
+    AdminLoginRequest,
+    AdminLockoutError,
+)
 from app.core.config import Settings
 from app.db.models import Project
 from app.domain.runs import RunCreationService
+from app.observability.query import ObservabilityNotFoundError, RunObservabilityQueryService
+from app.scheduler.service import (
+    RevisionConflictError as ScheduleRevisionConflictError,
+    ScheduleConfigUpdateRequest,
+    ScheduleService,
+)
 from app.observability.context import request_id_context
 from app.observability.logging import configure_json_logging
 from app.providers.feishu import (
@@ -98,6 +114,48 @@ def create_app(
         finally:
             request_id_context.reset(token)
 
+    @application.middleware("http")
+    async def admin_auth_guard(
+        request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        path = request.url.path
+        if path.startswith("/api/v1/admin/"):
+            if path not in {
+                "/api/v1/admin/auth/login",
+                "/api/v1/admin/auth/refresh",
+                "/api/v1/admin/auth/logout",
+            }:
+                auth_service = _admin_auth_service(application)
+                auth_context = auth_service.current_auth(request)
+                if auth_context is None:
+                    return JSONResponse(
+                        status_code=401,
+                        content={
+                            "detail": {
+                                "code": "UNAUTHORIZED",
+                                "message": "Authentication required",
+                            }
+                        },
+                    )
+                request.state.admin_auth = auth_context
+                if request.method not in {"GET", "HEAD", "OPTIONS"}:
+                    csrf_token = request.headers.get(CSRF_HEADER_NAME)
+                    csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
+                    if not csrf_token or not csrf_cookie or not hmac.compare_digest(
+                        csrf_token, csrf_cookie
+                    ):
+                        return JSONResponse(
+                            status_code=403,
+                            content={
+                                "detail": {
+                                    "code": "CSRF_TOKEN_INVALID",
+                                    "message": "Missing or invalid CSRF token",
+                                }
+                            },
+                        )
+        response = await call_next(request)
+        return response
+
     @application.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
@@ -163,6 +221,40 @@ def create_app(
             raise HTTPException(status_code=404, detail=str(error)) from error
         return JSONResponse(content=envelope.model_dump(mode="json"))
 
+    @application.get("/api/v1/admin/runs/{run_id}/timeline")
+    def list_admin_run_timeline(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "timeline", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/nodes")
+    def list_admin_run_nodes(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "nodes", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/tools")
+    def list_admin_run_tools(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "tools", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/llm-executions")
+    def list_admin_run_llm_executions(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(
+            application, "llm_executions", run_id, cursor=cursor, limit=limit
+        )
+
+    @application.get("/api/v1/admin/runs/{run_id}/audit-logs")
+    def list_admin_run_audit_logs(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(
+            application, "audit_logs", run_id, cursor=cursor, limit=limit
+        )
+
     @application.post("/api/v1/admin/runs/{run_id}/cancel", status_code=202)
     def cancel_admin_run(run_id: str, payload: RunCancelRequest) -> JSONResponse:
         runtime = _workflow_runtime(application)
@@ -189,6 +281,53 @@ def create_app(
             raise HTTPException(status_code=409, detail=str(error)) from error
         return JSONResponse(content={"status": "accepted", "data": result}, status_code=202)
 
+    @application.post("/api/v1/admin/auth/login")
+    def admin_auth_login(request: Request, payload: AdminLoginRequest) -> JSONResponse:
+        auth_service = _admin_auth_service(application)
+        try:
+            result = auth_service.login(request, payload)
+        except AdminLockoutError as error:
+            raise HTTPException(status_code=423, detail=str(error)) from error
+        except AdminAuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        response = JSONResponse(content={"data": result.payload().model_dump(mode="json")})
+        auth_service.set_auth_cookies(response, result)
+        return response
+
+    @application.post("/api/v1/admin/auth/refresh")
+    def admin_auth_refresh(request: Request) -> JSONResponse:
+        auth_service = _admin_auth_service(application)
+        try:
+            result = auth_service.refresh(request)
+        except AdminAuthenticationError as error:
+            raise HTTPException(status_code=401, detail=str(error)) from error
+        response = JSONResponse(content={"data": result.payload().model_dump(mode="json")})
+        auth_service.set_auth_cookies(response, result)
+        return response
+
+    @application.post("/api/v1/admin/auth/logout", status_code=204)
+    def admin_auth_logout(request: Request) -> Response:
+        auth_service = _admin_auth_service(application)
+        auth_service.logout(request)
+        response = Response(status_code=204)
+        auth_service.clear_auth_cookies(response)
+        return response
+
+    @application.get("/api/v1/admin/auth/me")
+    def admin_auth_me(request: Request) -> dict[str, object]:
+        auth_context = getattr(request.state, "admin_auth", None)
+        if auth_context is None:
+            auth_context = _admin_auth_service(application).current_auth(request)
+        if auth_context is None:
+            raise HTTPException(status_code=401, detail="Authentication required")
+        payload = AdminAuthPayload(
+            username=auth_context.user.username,
+            status=auth_context.user.status,
+            session_expires_at=auth_context.session.expires_at,
+            last_login_at=auth_context.user.last_login_at,
+        )
+        return {"data": payload.model_dump(mode="json")}
+
     @application.get("/api/v1/admin/project")
     def get_admin_project() -> dict[str, object]:
         return {"data": _configuration_service(application).get_project()}
@@ -206,6 +345,37 @@ def create_app(
             raise HTTPException(
                 status_code=404,
                 detail={"code": "NOT_FOUND", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.get("/api/v1/admin/project/schedule")
+    def get_admin_project_schedule() -> dict[str, object]:
+        return {"data": _schedule_service(application).get_schedule()}
+
+    @application.put("/api/v1/admin/project/schedule")
+    def update_admin_project_schedule(payload: ScheduleConfigUpdateRequest) -> dict[str, object]:
+        try:
+            data = _schedule_service(application).update_schedule(payload)
+        except ScheduleRevisionConflictError as error:
+            raise HTTPException(
+                status_code=409,
+                detail={"code": "REVISION_CONFLICT", "message": str(error)},
+            ) from error
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "VALIDATION_ERROR", "message": str(error)},
+            ) from error
+        return {"data": data}
+
+    @application.post("/api/v1/admin/project/schedule/validate")
+    def validate_admin_project_schedule(payload: ScheduleConfigUpdateRequest) -> dict[str, object]:
+        try:
+            data = _schedule_service(application).validate_schedule(payload)
+        except ValueError as error:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "VALIDATION_ERROR", "message": str(error)},
             ) from error
         return {"data": data}
 
@@ -470,6 +640,41 @@ def _workflow_runtime(application: FastAPI) -> WorkflowRuntime:
 
 def _configuration_service(application: FastAPI) -> AdminConfigurationService:
     return AdminConfigurationService(_session_factory(application), application.state.settings)
+
+
+def _schedule_service(application: FastAPI) -> ScheduleService:
+    return ScheduleService(_session_factory(application), application.state.settings)
+
+
+def _admin_auth_service(application: FastAPI) -> AdminAuthService:
+    service = getattr(application.state, "admin_auth_service", None)
+    if service is None:
+        service = AdminAuthService(_session_factory(application), application.state.settings)
+        application.state.admin_auth_service = service
+    return service
+
+
+def _observability_service(application: FastAPI) -> RunObservabilityQueryService:
+    return RunObservabilityQueryService(_session_factory(application))
+
+
+def _observability_collection(
+    application: FastAPI,
+    collection: str,
+    run_id: str,
+    *,
+    cursor: str | None,
+    limit: int,
+) -> dict[str, object]:
+    service = _observability_service(application)
+    try:
+        method = getattr(service, collection)
+        data = method(run_id, cursor=cursor, limit=limit)
+    except ObservabilityNotFoundError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+    return {"data": data, "meta": {"request_id": request_id_context.get()}}
 
 
 def _feishu_verification_token(request: Request) -> str | None:

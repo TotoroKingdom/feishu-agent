@@ -8,27 +8,40 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     Base.metadata.create_all(engine)
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) == {
+        "admin_sessions",
+        "admin_users",
+        "async_jobs",
         "callback_events",
+        "diagnosis_records",
+        "encrypted_credentials",
         "evidence_items",
         "evidence_sets",
+        "feishu_field_mappings",
         "feishu_resources",
         "feishu_message_deliveries",
         "human_approvals",
+        "login_audits",
         "metric_snapshots",
+        "model_configs",
         "normalized_entities",
         "normalized_snapshots",
-        "publish_plans",
-        "projects",
+        "audit_logs",
+        "outbox_messages",
         "project_repositories",
+        "projects",
+        "prompt_versions",
+        "publish_plans",
         "report_artifacts",
         "report_claims",
         "report_evidence",
         "report_runs",
         "report_versions",
-        "outbox_messages",
+        "run_status_history",
+        "llm_executions",
+        "node_executions",
+        "schedule_configs",
         "side_effect_attempts",
         "side_effect_operations",
-        "run_status_history",
         "source_data_batches",
         "tool_executions",
         "validation_results",
@@ -40,6 +53,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_report_runs_thread_id"
         for constraint in inspector.get_unique_constraints("report_runs")
+    )
+    assert any(
+        constraint["name"] == "uq_schedule_configs_project_id"
+        for constraint in inspector.get_unique_constraints("schedule_configs")
     )
     assert any(
         constraint["name"] == "uq_human_approvals_revision"
@@ -112,4 +129,12 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
     assert any(
         constraint["name"] == "uq_tool_executions_attempt"
         for constraint in inspector.get_unique_constraints("tool_executions")
+    )
+    assert any(
+        index["column_names"] == ["run_id", "started_at"]
+        for index in inspector.get_indexes("tool_executions")
+    )
+    assert any(
+        index["column_names"] == ["tool_name", "status", "started_at"]
+        for index in inspector.get_indexes("tool_executions")
     )

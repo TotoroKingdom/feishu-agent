@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://127.0.0.1:6379/0"
     app_encryption_key: SecretStr | None = None
     internal_service_token: SecretStr | None = None
+    admin_username: str = Field(default="admin", min_length=1, max_length=64)
+    admin_initial_password: SecretStr = SecretStr("AdminDemo!2026")
+    admin_access_token_minutes: int = Field(default=30, ge=1, le=1440)
+    admin_session_days: int = Field(default=7, ge=1, le=365)
+    admin_failed_login_limit: int = Field(default=5, ge=1, le=20)
+    admin_lock_minutes: int = Field(default=15, ge=1, le=1440)
+    admin_allowed_origins: list[str] = Field(default_factory=list)
 
     @field_validator("database_url")
     @classmethod
@@ -37,6 +44,8 @@ class Settings(BaseSettings):
             raise ValueError("production cannot use fake providers")
         if self.app_profile == "production" and self.app_encryption_key is None:
             raise ValueError("production requires app_encryption_key")
+        if self.app_profile == "production" and not self._looks_strong(self.admin_initial_password.get_secret_value()):
+            raise ValueError("production requires a strong admin_initial_password")
         if self.feishu_provider == "real":
             if self.feishu_app_id is None:
                 raise ValueError("real feishu provider requires feishu_app_id")
@@ -45,3 +54,13 @@ class Settings(BaseSettings):
             if self.feishu_verification_token is None:
                 raise ValueError("real feishu provider requires feishu_verification_token")
         return self
+
+    @staticmethod
+    def _looks_strong(value: str) -> bool:
+        if len(value) < 12:
+            return False
+        has_upper = any(character.isupper() for character in value)
+        has_lower = any(character.islower() for character in value)
+        has_digit = any(character.isdigit() for character in value)
+        has_symbol = any(not character.isalnum() for character in value)
+        return has_upper and has_lower and has_digit and has_symbol

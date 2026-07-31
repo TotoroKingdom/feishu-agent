@@ -10,9 +10,12 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import Settings
 from app.db.models import Base, Project
 from app.main import create_app
+from tests.admin_auth import authenticate_admin
 
 
-def make_admin_client() -> tuple[TestClient, sessionmaker[Session], str]:
+def make_admin_client(
+    *, authenticated: bool = True
+) -> tuple[TestClient, sessionmaker[Session], str]:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
@@ -31,4 +34,6 @@ def make_admin_client() -> tuple[TestClient, sessionmaker[Session], str]:
             session_factory=factory,
         )
     )
+    if authenticated:
+        authenticate_admin(client)
     return client, factory, project_id

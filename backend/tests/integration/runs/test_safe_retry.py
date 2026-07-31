@@ -27,6 +27,7 @@ from app.main import create_app
 from app.providers.fake import FakeEffectProvider, FakeScenario
 from app.publishing.service import PublishingService
 from app.side_effects.executor import SideEffectExecutor, build_operation_key
+from tests.admin_auth import authenticate_admin
 
 
 class PartialFailureVerifierProvider(FakeEffectProvider):
@@ -142,6 +143,7 @@ def _make_client(
             workflow_runtime=runtime,
         )
     )
+    authenticate_admin(client)
     with factory() as session:
         run_id = session.scalar(select(ReportRun.id).order_by(ReportRun.created_at.desc()))
         report_version_id = session.scalar(

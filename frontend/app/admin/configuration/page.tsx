@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { cookies } from "next/headers";
 
 import {
   ConfigurationManagementPanel,
@@ -7,6 +8,7 @@ import {
   type PromptVersion,
   type ProjectConfig,
 } from "@/components/configuration-management-panel";
+import { buildAdminRequestInit } from "@/lib/admin-auth";
 import { getBackendBaseUrl } from "@/lib/backend-url";
 
 type Envelope<T> = {
@@ -14,11 +16,27 @@ type Envelope<T> = {
 };
 
 async function loadJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${getBackendBaseUrl()}${path}`, { cache: "no-store" });
+  const cookieHeader = serializeCookies();
+  const response = await fetch(
+    `${getBackendBaseUrl()}${path}`,
+    buildAdminRequestInit(
+      {
+        cache: "no-store",
+      },
+      { cookieHeader },
+    ),
+  );
   if (!response.ok) {
     throw new Error(`Failed to load ${path} (${response.status})`);
   }
   return (await response.json()) as T;
+}
+
+function serializeCookies(): string {
+  return cookies()
+    .getAll()
+    .map(({ name, value }) => `${name}=${value}`)
+    .join("; ");
 }
 
 async function loadConfigurationSnapshot(): Promise<ConfigurationSnapshot> {

@@ -13,6 +13,7 @@ from app.core.config import Settings
 from app.db.models import Base, Project, ToolExecution, new_id
 from app.domain.runs import RunCreationService
 from app.main import create_app
+from tests.admin_auth import authenticate_admin
 
 
 def _make_client() -> tuple[TestClient, sessionmaker[Session], str, WorkflowRuntime]:
@@ -35,6 +36,7 @@ def _make_client() -> tuple[TestClient, sessionmaker[Session], str, WorkflowRunt
         )
         session.commit()
     client = TestClient(create_app(settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory))
+    authenticate_admin(client)
     runtime = WorkflowRuntime(factory, MemorySaver())
     return client, factory, run.id, runtime
 
