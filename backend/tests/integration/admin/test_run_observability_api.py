@@ -1,127 +1,135 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app.db.models import AuditLog, LlmExecution, NodeExecution, ToolExecution, new_id
 from app.domain.runs import RunCreationService
-from tests.integration.admin._helpers import make_admin_client
+
+from ._helpers import make_admin_client
 
 
-def test_run_observability_endpoints_return_redacted_timeline_and_lists() -> None:
+def _make_observability_run() -> tuple[object, object, str]:
     client, factory, project_id = make_admin_client()
     with factory() as session:
         run = RunCreationService(session).create_run(
             project_id,
             "2026-W30",
-            datetime(2026, 7, 20, tzinfo=UTC).date(),
-            datetime(2026, 7, 27, tzinfo=UTC).date(),
+            date(2026, 7, 20),
+            date(2026, 7, 27),
         )
-        session.add_all(
-            [
-                NodeExecution(
-                    id=new_id(),
-                    run_id=run.id,
-                    node_name="collect_github_data",
-                    node_attempt=1,
-                    checkpoint_before="checkpoint-before",
-                    checkpoint_after="checkpoint-after",
-                    status="succeeded",
-                    input_summary={"repository_ref": "org/repo"},
-                    output_summary={"count": 2},
-                    error_class=None,
-                    error_summary=None,
-                    started_at=datetime(2026, 7, 29, 10, 0, tzinfo=UTC),
-                    ended_at=datetime(2026, 7, 29, 10, 0, 30, tzinfo=UTC),
-                    duration_ms=30_000,
-                ),
-                ToolExecution(
-                    id=new_id(),
-                    run_id=run.id,
-                    node_execution_id="collect_github_data",
-                    tool_name="github.read_repository_core_data",
-                    tool_version="fake.v1",
-                    attempt=1,
-                    idempotency_key="tool-key-1",
-                    request_summary={"token": "super-secret", "repo": "org/repo"},
-                    result_summary={"ok": True, "api_key": "secret-value"},
-                    data_ref=None,
-                    provider_request_id=None,
-                    status="success",
-                    error_class=None,
-                    error_code=None,
-                    retryable=False,
-                    started_at=datetime(2026, 7, 29, 10, 0, 5, tzinfo=UTC),
-                    ended_at=datetime(2026, 7, 29, 10, 0, 7, tzinfo=UTC),
-                    duration_ms=2000,
-                ),
-                LlmExecution(
-                    id=new_id(),
-                    run_id=run.id,
-                    node_execution_id="generate_structured_report",
-                    provider="openai",
-                    model="gpt-4.1-mini",
-                    prompt_type="report",
-                    prompt_version_id=None,
-                    input_hash="input-hash-1",
-                    output_ref="report-version-1",
-                    status="succeeded",
-                    schema_valid=True,
-                    input_tokens=111,
-                    output_tokens=222,
-                    total_tokens=333,
-                    duration_ms=444,
-                    error_class=None,
-                    created_at=datetime(2026, 7, 29, 10, 0, 10, tzinfo=UTC),
-                ),
-                AuditLog(
-                    id=1,
-                    occurred_at=datetime(2026, 7, 29, 10, 0, 15, tzinfo=UTC),
-                    request_id="req_123",
-                    run_id=run.id,
-                    actor_type="admin",
-                    actor_id="admin",
-                    action="update_project",
-                    resource_type="project",
-                    resource_id=project_id,
-                    before_summary={"password": "hunter2", "name": "Demo"},
-                    after_summary={"password": "hunter2", "name": "Demo v2"},
-                    result="succeeded",
-                    ip_hash="ip-hash",
-                    metadata={"token": "secret"},
-                ),
-            ]
+        node_started_at = datetime(2026, 7, 30, 10, 0, tzinfo=timezone.utc)
+        node = NodeExecution(
+            id=new_id(),
+            run_id=run.id,
+            node_name="collect_sources",
+            node_attempt=1,
+            checkpoint_before="ckpt-before",
+            checkpoint_after="ckpt-after",
+            status="succeeded",
+            input_summary={"token": "node-secret", "plain": "value"},
+            output_summary={"api_key": "node-api-key", "rows": 3},
+            error_class=None,
+            error_summary=None,
+            started_at=node_started_at,
+            ended_at=node_started_at + timedelta(seconds=30),
+            duration_ms=30000,
         )
+        tool = ToolExecution(
+            id=new_id(),
+            run_id=run.id,
+            node_execution_id=node.id,
+            tool_name="feishu_fetch",
+            tool_version="v1",
+            attempt=1,
+            idempotency_key="tool-secret",
+            request_summary={"token": "tool-secret", "query": "items"},
+            result_summary={"api_key": "tool-api-key", "count": 1},
+            data_ref="data-ref-1",
+            provider_request_id="provider-request-1",
+            status="success",
+            error_class=None,
+            error_code=None,
+            retryable=False,
+            started_at=node_started_at + timedelta(seconds=31),
+            ended_at=node_started_at + timedelta(seconds=41),
+            duration_ms=10000,
+        )
+        llm = LlmExecution(
+            id=new_id(),
+            run_id=run.id,
+            node_execution_id=node.id,
+            provider="openai",
+            model="gpt-4.1-mini",
+            prompt_type="report_summary",
+            prompt_version_id="prompt-v1",
+            input_hash="input-hash-1",
+            output_ref="output-ref-1",
+            status="succeeded",
+            schema_valid=True,
+            input_tokens=111,
+            output_tokens=222,
+            total_tokens=333,
+            duration_ms=4444,
+            error_class=None,
+            created_at=node_started_at + timedelta(seconds=42),
+        )
+        audit = AuditLog(
+            occurred_at=node_started_at + timedelta(seconds=43),
+            request_id="req-observability",
+            run_id=run.id,
+            actor_type="admin",
+            actor_id="admin-user",
+            action="update_project",
+            resource_type="project",
+            resource_id=project_id,
+            before_summary={"password": "before-secret", "plain": "before"},
+            after_summary={"password": "after-secret", "plain": "after"},
+            result="succeeded",
+            ip_hash="ip-hash-1",
+            metadata_={"source": "test", "token": "audit-secret"},
+        )
+        session.add_all([node, tool, llm, audit])
         session.commit()
+    return client, factory, run.id
 
-    timeline_response = client.get(f"/api/v1/admin/runs/{run.id}/timeline", params={"limit": 2})
-    assert timeline_response.status_code == 200
-    timeline = timeline_response.json()["data"]
-    assert timeline["has_more"] is True
-    assert timeline["next_cursor"] == "2"
-    assert [item["event_type"] for item in timeline["items"]] == [
-        "node_execution",
-        "tool_execution",
-    ]
 
-    nodes_response = client.get(f"/api/v1/admin/runs/{run.id}/nodes")
-    assert nodes_response.status_code == 200
-    nodes = nodes_response.json()["data"]
-    assert nodes["items"][0]["node_name"] == "collect_github_data"
-    assert nodes["items"][0]["duration_ms"] == 30000
+def test_run_observability_endpoints_expose_desensitized_timelines_and_lists() -> None:
+    client, _, run_id = _make_observability_run()
 
-    tools_response = client.get(f"/api/v1/admin/runs/{run.id}/tools")
-    assert tools_response.status_code == 200
-    tools = tools_response.json()["data"]
-    assert tools["items"][0]["request_summary"]["token"] == "[REDACTED]"
-    assert tools["items"][0]["result_summary"]["api_key"] == "[REDACTED]"
+    timeline = client.get(f"/api/v1/admin/runs/{run_id}/timeline?limit=2")
+    assert timeline.status_code == 200
+    timeline_data = timeline.json()["data"]
+    assert len(timeline_data["items"]) == 2
+    assert timeline_data["has_more"] is True
+    assert timeline_data["next_cursor"] is not None
+    assert timeline_data["items"][0]["event_type"] == "node_execution"
 
-    llm_response = client.get(f"/api/v1/admin/runs/{run.id}/llm-executions")
-    assert llm_response.status_code == 200
-    llms = llm_response.json()["data"]
-    assert llms["items"][0]["total_tokens"] == 333
+    nodes = client.get(f"/api/v1/admin/runs/{run_id}/nodes")
+    assert nodes.status_code == 200
+    node_items = nodes.json()["data"]["items"]
+    assert len(node_items) == 1
+    assert node_items[0]["duration_ms"] == 30000
+    assert node_items[0]["input_summary"]["token"] == "[REDACTED]"
+    assert node_items[0]["output_summary"]["api_key"] == "[REDACTED]"
 
-    audit_response = client.get(f"/api/v1/admin/runs/{run.id}/audit-logs")
-    assert audit_response.status_code == 200
-    audits = audit_response.json()["data"]
-    assert audits["items"][0]["before_summary"]["password"] == "[REDACTED]"
-    assert audits["items"][0]["after_summary"]["password"] == "[REDACTED]"
+    tools = client.get(f"/api/v1/admin/runs/{run_id}/tools")
+    assert tools.status_code == 200
+    tool_items = tools.json()["data"]["items"]
+    assert len(tool_items) == 1
+    assert tool_items[0]["request_summary"]["token"] == "[REDACTED]"
+    assert tool_items[0]["result_summary"]["api_key"] == "[REDACTED]"
+
+    llm = client.get(f"/api/v1/admin/runs/{run_id}/llm-executions")
+    assert llm.status_code == 200
+    llm_items = llm.json()["data"]["items"]
+    assert len(llm_items) == 1
+    assert llm_items[0]["total_tokens"] == 333
+    assert llm_items[0]["schema_valid"] is True
+
+    audit = client.get(f"/api/v1/admin/runs/{run_id}/audit-logs")
+    assert audit.status_code == 200
+    audit_items = audit.json()["data"]["items"]
+    assert len(audit_items) == 1
+    assert audit_items[0]["before_summary"]["password"] == "[REDACTED]"
+    assert audit_items[0]["after_summary"]["password"] == "[REDACTED]"
+    assert audit_items[0]["metadata"]["token"] == "[REDACTED]"
