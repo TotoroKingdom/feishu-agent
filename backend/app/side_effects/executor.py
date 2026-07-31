@@ -409,6 +409,11 @@ class SideEffectExecutor:
                     existing_operation.completed_at = None
                     existing_operation.updated_at = now
                     existing_operation.version += 1
+                    existing_operation.lease_owner = "side-effect-executor"
+                    existing_operation.lease_expires_at = now + timedelta(
+                        seconds=DEFAULT_OPERATION_LEASE_SECONDS
+                    )
+                    existing_operation.heartbeat_at = now
                     existing_operation.external_resource_id = None
                     existing_operation.external_url = None
                     existing_operation.provider_request_id = None
@@ -444,6 +449,11 @@ class SideEffectExecutor:
                 existing_operation.completed_at = None
                 existing_operation.updated_at = now
                 existing_operation.version += 1
+                existing_operation.lease_owner = "side-effect-executor"
+                existing_operation.lease_expires_at = now + timedelta(
+                    seconds=DEFAULT_OPERATION_LEASE_SECONDS
+                )
+                existing_operation.heartbeat_at = now
                 existing_operation.external_resource_id = None
                 existing_operation.external_url = None
                 existing_operation.provider_request_id = None
@@ -556,6 +566,9 @@ class SideEffectExecutor:
             operation.verification_status = "not_checked"
             operation.completed_at = datetime.now(UTC)
             operation.updated_at = operation.completed_at
+            operation.lease_owner = None
+            operation.lease_expires_at = None
+            operation.heartbeat_at = operation.completed_at
             attempt.status = "succeeded"
 
             artifact = self._create_artifact(
@@ -757,14 +770,18 @@ def _operation_claim_is_expired(
     *,
     lease_seconds: int = DEFAULT_OPERATION_LEASE_SECONDS,
 ) -> bool:
+    current_time = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    if operation.lease_expires_at is not None:
+        expires_at = (
+            operation.lease_expires_at
+            if operation.lease_expires_at.tzinfo is not None
+            else operation.lease_expires_at.replace(tzinfo=UTC)
+        )
+        return current_time >= expires_at
     started_at = operation.started_at
     if started_at is None:
         return True
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=UTC)
-    else:
-        started_at = started_at.astimezone(UTC)
-    current_time = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    started_at = started_at if started_at.tzinfo is not None else started_at.replace(tzinfo=UTC)
     return current_time - started_at >= timedelta(seconds=lease_seconds)
 
 

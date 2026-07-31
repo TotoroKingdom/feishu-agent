@@ -5,35 +5,176 @@ on:
   pull_request:
 
 jobs:
-  foundation:
+  backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+    services:
+      postgres:
+        image: postgres:16.6-alpine
+        env:
+          POSTGRES_DB: feishu_agent
+          POSTGRES_USER: feishu_agent
+          POSTGRES_PASSWORD: change-me
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U feishu_agent -d feishu_agent"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7.4-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgresql+psycopg://feishu_agent:change-me@127.0.0.1:5432/feishu_agent
+      REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
       - name: Install backend
         working-directory: backend
         run: python -m pip install -e . -e ".[dev]"
-      - name: Backend checks
+      - name: Backend smoke
+        working-directory: backend
+        run: python -m pytest tests/test_smoke.py -q
+      - name: Backend unit tests
+        working-directory: backend
+        run: python -m pytest tests/unit -q
+      - name: Backend contract tests
+        working-directory: backend
+        run: python -m pytest tests/contract -q
+      - name: Backend integration tests
+        working-directory: backend
+        run: python -m pytest tests/integration -q
+      - name: Backend scenario tests
+        working-directory: backend
+        run: python -m pytest tests/scenarios -q
+      - name: Backend e2e tests
+        working-directory: backend
+        run: python -m pytest tests/e2e -q
+      - name: Backend migration layer
         working-directory: backend
         run: |
-          ruff check .
-          ruff format --check .
-          mypy app
-          pytest tests -q
-          alembic upgrade head --sql > /tmp/alembic.sql
+          python -m alembic upgrade head
+          python -m alembic downgrade -1
+          python -m alembic upgrade head
+      - name: Backend dependency sanity
+        working-directory: backend
+        run: python -m pip check
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
       - name: Install frontend
         working-directory: frontend
-        run: npm install
-      - name: Frontend checks
+        run: npm ci
+      - name: Frontend test layer 1
         working-directory: frontend
-        run: |
-          npm run lint
-          npm run typecheck
-          npm run build
+        run: npm run test -- dashboard runs run-detail
+      - name: Frontend test layer 2
+        working-directory: frontend
+        run: npm run test -- repository-config feishu-resource-mapping credentials config-confirmation
+      - name: Frontend lint
+        working-directory: frontend
+        run: npm run lint
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Frontend build
+        working-directory: frontend
+        run: npm run build
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
       - name: Compose config
         run: docker compose config
+      - name: Compose up
+        run: docker compose up --build -d
+      - name: Wait for backend health
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/health > /tmp/health.json; then
+              cat /tmp/health.json
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose logs --no-color
+          exit 1
+      - name: Wait for ready
+        run: |
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8080/ready > /tmp/ready.json; then
+              cat /tmp/ready.json
+              exit 0
+            fi
+            sleep 5
+          done
+          docker compose logs --no-color
+          exit 1
+      - name: Verify route restriction
+        run: |
+          status=$(curl --silent --output /dev/null --write-out '%{http_code}' http://127.0.0.1:8080/internal/v1/runs)
+          test "$status" = "404"
+      - name: Cleanup compose
+        if: always()
+        run: docker compose down -v
+
+  security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: backend/pyproject.toml
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install backend
+        working-directory: backend
+        run: python -m pip install -e . -e ".[dev]"
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Secret scan
+        run: python scripts/secret_scan.py
+      - name: Dependency scan
+        run: python scripts/dependency_scan.py
+
+  sbom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate SBOMs
+        run: python scripts/sbom.py
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: artifacts/sbom

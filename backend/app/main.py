@@ -12,6 +12,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
+from app.admin.onboarding import (
+    AdminOnboardingService,
+    OnboardingAuthorizationError,
+    OnboardingConflictError,
+    OnboardingCredentialRequest,
+    OnboardingDraftRequest,
+    OnboardingNotFoundError,
+    OnboardingStartRequest,
+)
 from app.agent.runtime import WorkflowRuntime
 from app.admin.configuration import (
     AdminConfigurationService,
@@ -39,7 +48,7 @@ from app.admin.auth import (
 from app.core.config import Settings
 from app.db.models import Project
 from app.domain.runs import RunCreationService
-from app.observability.query import ObservabilityNotFoundError, RunObservabilityQueryService
+from app.observability.query import RunObservabilityNotFoundError, RunObservabilityQueryService
 from app.scheduler.service import (
     RevisionConflictError as ScheduleRevisionConflictError,
     ScheduleConfigUpdateRequest,
@@ -244,16 +253,58 @@ def create_app(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
         return _observability_collection(
-            application, "llm_executions", run_id, cursor=cursor, limit=limit
+            application,
+            "llm_executions",
+            run_id,
+            cursor=cursor,
+            limit=limit,
         )
+
+    @application.get("/api/v1/admin/runs/{run_id}/diagnoses")
+    def list_admin_run_diagnoses(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "diagnoses", run_id, cursor=cursor, limit=limit)
 
     @application.get("/api/v1/admin/runs/{run_id}/audit-logs")
     def list_admin_run_audit_logs(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
+        return _observability_collection(application, "audit_logs", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/approvals")
+    def list_admin_run_approvals(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "approvals", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/artifacts")
+    def list_admin_run_artifacts(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "artifacts", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/side-effects")
+    def list_admin_run_side_effects(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
         return _observability_collection(
-            application, "audit_logs", run_id, cursor=cursor, limit=limit
+            application, "side_effects", run_id, cursor=cursor, limit=limit
         )
+
+    @application.get("/api/v1/admin/runs/{run_id}/evidence")
+    def list_admin_run_evidence(
+        run_id: str, cursor: str | None = None, limit: int = 50
+    ) -> dict[str, object]:
+        return _observability_collection(application, "evidence", run_id, cursor=cursor, limit=limit)
+
+    @application.get("/api/v1/admin/runs/{run_id}/publish-plan")
+    def get_admin_run_publish_plan(run_id: str) -> dict[str, object]:
+        try:
+            data = _observability_service(application).publish_plan(run_id)
+        except RunObservabilityNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data, "meta": {"request_id": request_id_context.get()}}
 
     @application.post("/api/v1/admin/runs/{run_id}/cancel", status_code=202)
     def cancel_admin_run(run_id: str, payload: RunCancelRequest) -> JSONResponse:
@@ -561,6 +612,71 @@ def create_app(
     def run_admin_connectivity_test() -> dict[str, object]:
         return {"data": _configuration_service(application).run_connectivity_job()}
 
+    @application.get("/api/v1/admin/onboarding")
+    def get_admin_onboarding(feishu_actor_id: str) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).get(feishu_actor_id)
+        except OnboardingAuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
+    @application.post("/api/v1/admin/onboarding/start")
+    def start_admin_onboarding(payload: OnboardingStartRequest) -> JSONResponse:
+        try:
+            data, created = _onboarding_service(application).start(payload.feishu_actor_id)
+        except OnboardingAuthorizationError as error:
+            raise HTTPException(status_code=403, detail=str(error)) from error
+        status_code = 201 if created else 200
+        return JSONResponse(content={"data": data.model_dump(mode="json")}, status_code=status_code)
+
+    @application.patch("/api/v1/admin/onboarding/sessions/{session_id}/draft")
+    def patch_admin_onboarding_draft(
+        session_id: str, payload: OnboardingDraftRequest
+    ) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).update_draft(session_id, payload)
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
+    @application.put("/api/v1/admin/onboarding/sessions/{session_id}/github-pat")
+    def put_admin_onboarding_github_pat(
+        session_id: str, payload: OnboardingCredentialRequest
+    ) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).store_github_pat(session_id, payload)
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
+    @application.post("/api/v1/admin/onboarding/sessions/{session_id}/preview")
+    def post_admin_onboarding_preview(session_id: str) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).preview(session_id)
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
+    @application.post("/api/v1/admin/onboarding/sessions/{session_id}/complete")
+    def post_admin_onboarding_complete(session_id: str) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).complete(session_id)
+        except OnboardingConflictError as error:
+            raise HTTPException(status_code=409, detail=str(error)) from error
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
+    @application.post("/api/v1/admin/onboarding/sessions/{session_id}/cancel")
+    def post_admin_onboarding_cancel(session_id: str) -> dict[str, object]:
+        try:
+            data = _onboarding_service(application).cancel(session_id)
+        except OnboardingNotFoundError as error:
+            raise HTTPException(status_code=404, detail=str(error)) from error
+        return {"data": data.model_dump(mode="json")}
+
     @application.get("/api/v1/admin/connectivity-jobs/{job_id}")
     def get_admin_connectivity_job(job_id: str) -> dict[str, object]:
         try:
@@ -654,6 +770,10 @@ def _admin_auth_service(application: FastAPI) -> AdminAuthService:
     return service
 
 
+def _onboarding_service(application: FastAPI) -> AdminOnboardingService:
+    return AdminOnboardingService(_session_factory(application), application.state.settings)
+
+
 def _observability_service(application: FastAPI) -> RunObservabilityQueryService:
     return RunObservabilityQueryService(_session_factory(application))
 
@@ -668,9 +788,29 @@ def _observability_collection(
 ) -> dict[str, object]:
     service = _observability_service(application)
     try:
-        method = getattr(service, collection)
-        data = method(run_id, cursor=cursor, limit=limit)
-    except ObservabilityNotFoundError as error:
+        if collection == "timeline":
+            data = service.timeline(run_id, cursor=cursor, limit=limit)
+        elif collection == "nodes":
+            data = service.nodes(run_id, cursor=cursor, limit=limit)
+        elif collection == "tools":
+            data = service.tools(run_id, cursor=cursor, limit=limit)
+        elif collection == "llm_executions":
+            data = service.llm_executions(run_id, cursor=cursor, limit=limit)
+        elif collection == "diagnoses":
+            data = service.diagnoses(run_id, cursor=cursor, limit=limit)
+        elif collection == "audit_logs":
+            data = service.audit_logs(run_id, cursor=cursor, limit=limit)
+        elif collection == "approvals":
+            data = service.approvals(run_id, cursor=cursor, limit=limit)
+        elif collection == "artifacts":
+            data = service.artifacts(run_id, cursor=cursor, limit=limit)
+        elif collection == "side_effects":
+            data = service.side_effects(run_id, cursor=cursor, limit=limit)
+        elif collection == "evidence":
+            data = service.evidence(run_id, cursor=cursor, limit=limit)
+        else:
+            raise ValueError(f"unknown observability collection: {collection}")
+    except RunObservabilityNotFoundError as error:
         raise HTTPException(status_code=404, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=400, detail=str(error)) from error

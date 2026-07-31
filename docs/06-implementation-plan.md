@@ -2453,3 +2453,49 @@ T40、T41、T42、T43。
 `.env` 完整性审计通过，三个 Provider 配置检查器均返回 `status=ready`；但三者均明确 `network_calls_made=false`。因此 T4 已完成跨文档边界和条件冻结记录，但正式验收未通过：阻塞性未知项尚未清零，不能开始 T5 及后续编码。
 
 正式冻结前仍需取得并记录：飞书真实回调/卡片/多维表格/文档/消息 Contract Test，GitHub 两个测试仓库的最小权限与错误分类 Contract Test，以及 LLM schema、usage、429、timeout 和模型能力 Contract Test。
+
+## 17. T44 首轮执行记录（2026-07-31）
+
+### 17.1 本地验收结果
+
+- 后端完整 `tests` 测试集通过；此前失败的指标版本、发布计划终态、production 配置夹具和 `onboarding_sessions` 表清单已按既有 T33/T16/T20/T41 契约同步。
+- `full-ci-local` 已扩展为执行 unit、contract、integration、scenarios 和 e2e，避免局部测试通过掩盖累计回归。
+- local-demo happy path、Compose health/ready、外部 `/internal/*` 隔离以及数据库备份/恢复演练已通过；恢复演练产生的容器和临时数据卷已清理。
+- 全新 Compose 数据卷启动后容器可进入 healthy，但业务表尚不存在；手动执行 `docker compose exec -T backend alembic upgrade head` 后才能创建 local-demo 运行，说明 T43 的“一键启动”验收仍有迁移缺口。
+- 手动迁移后，运行详情页面及 `/api/v1/admin/runs/{run_id}` 可访问；但 `/api/v1/admin/dashboard` 和 `/api/v1/admin/runs` 均返回 404，dashboard/run-list 页面最终渲染为 `Failed to load` 与 `NEXT_NOT_FOUND`，说明 T39/T40 的查询 API 与 UI 联调验收未闭环。
+- 内置浏览器还会把本机和私网目标隔离到其自身的 `https://localhost`，无法访问宿主机端口；本轮未取得 DOM 级浏览器 E2E 证据，checklist 保持未通过。
+
+### 17.2 真实平台预检结果
+
+- 飞书鉴权成功；测试多维表格字段和记录读取均被业务码 `99991672` 拒绝，缺少应用身份的多维表格读取权限。
+- GitHub 两个测试仓均对当前 PAT 返回 HTTP 404，尚不能证明仓库存在性、授权范围或核心实体读取能力。
+- LLM 原配置模型名无效；`deepseek-v4-flash` 的最小 JSON Output 与 usage 探测成功，但错误矩阵和完整报告 schema 尚未验证。
+- 本轮没有执行真实卡片、文档、群消息或归档写入，也没有生成可记录的真实平台 `run_id`。
+
+### 17.3 Release checklist
+
+- [x] 后端完整测试集通过。
+- [x] local-demo E2E 通过。
+- [x] Compose health/ready 与公网路由限制通过。
+- [x] 备份、清库、恢复和恢复后记录校验通过。
+- [x] 扩展后的 `full-ci-local` 在当前变更上完整复跑通过。
+- [ ] 浏览器 E2E 通过。
+- [ ] 飞书 F-01–F-10 Contract Test 取得脱敏真实证据。
+- [ ] GitHub G-01–G-10 Contract Test 取得脱敏真实证据。
+- [ ] LLM L-01–L-03 Contract Test 取得脱敏真实证据。
+- [ ] 真实两阶段 HITL、双源、多仓和重复点击通过。
+- [ ] 真实文档、群消息和多维表格归档三步发布通过。
+- [ ] 真实运行完成重启恢复并记录 `run_id`、审计轨迹和脱敏证据。
+
+### 17.4 当前阻塞
+
+1. 飞书管理员需为应用开通多维表格读取权限，并确保测试多维表格将该应用加入可访问范围。
+2. GitHub 管理员需确认两个 `owner/repo` 标识，并将两个仓库加入 Fine-grained PAT 的 Repository access；至少授予 Metadata、Contents、Issues 和 Pull requests 只读权限。
+3. LLM 配置需将模型更新为当前 Provider 支持的模型，并由产品/安全负责人确认预算、数据保留和出境策略。
+4. 执行真实写入前，需确认公网 HTTPS 回调地址、飞书事件/卡片回调配置、测试产物保留或清理责任，并明确批准真实发布范围。
+5. T43 需补齐 clean Compose 启动时的自动迁移或等价单命令编排，再重新执行“一键启动”验收。
+6. T20/T21/T25/T13/T23 的真实多维表格、卡片、文档/消息/归档、LLM 适配器及 production runtime 组装尚未完整接入；按本计划 T44 验收失败回退规则，应先回到对应 Task 修复，不能在 T44 中用 Fake 结果替代真实证据。
+7. T39/T40 需补齐 dashboard 与 run-list 查询 API，并增加覆盖真实前后端路由的集成/E2E 测试；当前仅前端 fixture 测试通过，部署后页面实际加载失败。
+8. 修复第 7 项后，浏览器 E2E 需在能够直接访问宿主机 `localhost` 的浏览器执行环境中复跑管理仪表盘、运行列表和运行详情页。
+
+依据本计划第 12、15 节，以上阻塞清零前不得执行真实发布，T44 状态保持未完成。

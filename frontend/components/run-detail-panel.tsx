@@ -1,12 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 import { isTerminalRunStatus, summarizeRunDetail, type RunDetailView } from "@/lib/run-detail";
+import { RunObservabilityPanel } from "@/components/run-observability-panel";
 
 type Props = {
   initialDetail: RunDetailView;
   requestId: string;
+  children?: ReactNode;
 };
 
 type PanelState = {
@@ -56,7 +58,7 @@ async function fetchRunDetail(runId: string): Promise<RunDetailView> {
   return payload.data;
 }
 
-export function RunDetailPanel({ initialDetail, requestId }: Props) {
+export function RunDetailPanel({ initialDetail, requestId, children }: Props) {
   const [state, setState] = useState<PanelState>({
     detail: initialDetail,
     updatedAt: new Date().toISOString(),
@@ -300,6 +302,14 @@ export function RunDetailPanel({ initialDetail, requestId }: Props) {
             <DetailRow label="Terminal" value={String(summary.isTerminal)} />
           </div>
         </section>
+
+        {children ?? (
+          <RunObservabilityPanel
+            runId={state.detail.run_id}
+            requestId={requestId}
+            isTerminal={summary.isTerminal}
+          />
+        )}
       </div>
     </main>
   );

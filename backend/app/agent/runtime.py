@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 
 from langgraph.checkpoint.base import CheckpointTuple
@@ -23,11 +23,13 @@ from app.db.models import (
     ReportRun,
     RunStatusHistory,
     SideEffectOperation,
+    new_id,
 )
 from app.metrics.service import MetricsService
 from app.publishing.generation import build_publish_plan_hash
 from app.publishing.service import PublishingService
 from app.reporting.service import ReportingService
+from app.runtime.leases import DEFAULT_RUN_LEASE_SECONDS, RunLeaseConflictError, RunLeaseService
 
 RETRYABLE_ERROR_CLASSES = {"timeout", "rate_limited", "transient_timeout"}
 
@@ -54,8 +56,12 @@ class WorkflowRuntime:
         reporting_service: ReportingService | None = None,
         publishing_service: PublishingService | None = None,
         human_input_store: HumanInputApprovalStore | None = None,
+        worker_id: str | None = None,
     ) -> None:
         self._session_factory = session_factory
+        self._worker_id = worker_id or new_id()
+        self._run_lease_seconds = DEFAULT_RUN_LEASE_SECONDS
+        self._lease_service = RunLeaseService(session_factory)
         self._approval_store = GenerationApprovalStore(session_factory)
         self._human_input_store = human_input_store or HumanInputApprovalStore(session_factory)
         self._diagnosis_service = diagnosis_service or DiagnosisService(session_factory)
@@ -85,6 +91,8 @@ class WorkflowRuntime:
             if existing is not None:
                 snapshot = cast(StateSnapshot, self._graph.get_state(config))
                 return self._result_from_snapshot(run_id, thread_id, snapshot)
+            lease_now = datetime.now(UTC)
+            self._claim_run_lease(run, now=lease_now)
             initial_state = self._initial_state(run, project)
             session.flush()
             self._graph.invoke(initial_state, config=config)
@@ -102,6 +110,7 @@ class WorkflowRuntime:
             run.current_stage = self._current_stage_from_snapshot(snapshot) or run.current_stage
             run.current_node = self._current_node_from_snapshot(snapshot)
             run.scope_revision = self._scope_revision_from_snapshot(snapshot) or run.scope_revision
+            self._release_run_lease(run, now=datetime.now(UTC))
             session.commit()
             return self._result_from_snapshot(run_id, thread_id, snapshot)
 
@@ -150,6 +159,8 @@ class WorkflowRuntime:
                             )
                 if self._resume_challenge_id(normalized_resume_payload) != pending.challenge_id:
                     return self._result_from_snapshot(run_id, thread_id, snapshot)
+            lease_now = datetime.now(UTC)
+            self._claim_run_lease(run, now=lease_now)
             self._graph.invoke(Command(resume=normalized_resume_payload), config=config)
             snapshot = cast(StateSnapshot, self._graph.get_state(config))
             previous_status = run.status
@@ -166,6 +177,7 @@ class WorkflowRuntime:
                 node_name=run.current_node,
                 checkpoint_ref=self._checkpoint_id(snapshot),
             )
+            self._release_run_lease(run, now=datetime.now(UTC))
             session.commit()
             return self._result_from_snapshot(run_id, thread_id, snapshot)
 
@@ -248,6 +260,7 @@ class WorkflowRuntime:
                 raise ValueError("run status mismatch")
 
             now = datetime.now(UTC)
+            self._claim_run_lease(run, now=now)
             self._cancel_pending_approvals(session, run_id, reason=reason, now=now)
             self._cancel_pending_publish_operations(session, run_id, reason=reason, now=now)
 
@@ -283,6 +296,7 @@ class WorkflowRuntime:
                 node_name="complete_run",
                 checkpoint_ref=checkpoint_ref,
             )
+            self._release_run_lease(run, now=now)
             session.commit()
             return self._command_result(run, stage="cancelled", node="complete_run", reason=reason)
 
@@ -362,6 +376,8 @@ class WorkflowRuntime:
                 if operation.status in {"pending", "claimed", "running", "retry_pending"}:
                     retry_sequences.append(operation.sequence)
 
+            now = datetime.now(UTC)
+            self._claim_run_lease(run, now=now)
             if not retry_sequences:
                 previous_status = run.status
                 publish_plan.status = "completed"
@@ -377,6 +393,7 @@ class WorkflowRuntime:
                     node_name="complete_run",
                     checkpoint_ref=self._checkpoint_id(snapshot) if snapshot is not None else None,
                 )
+                self._release_run_lease(run, now=now)
                 session.commit()
                 return self._command_result(
                     run, stage="succeeded", node="complete_run", reason=reason
@@ -420,10 +437,14 @@ class WorkflowRuntime:
                 node_name=run.current_node,
                 checkpoint_ref=self._checkpoint_id(snapshot),
             )
+            self._release_run_lease(run, now=now)
             session.commit()
             return self._command_result(
                 run, stage=run.current_stage, node=run.current_node, reason=reason
             )
+
+    def recover_expired_run_ids(self, *, now: datetime | None = None) -> list[str]:
+        return self._lease_service.recover_expired_run_ids(now=now)
 
     def _config(self, thread_id: str) -> dict[str, dict[str, str]]:
         return {"configurable": {"thread_id": thread_id}}
@@ -723,6 +744,23 @@ class WorkflowRuntime:
             )
         )
 
+    def _claim_run_lease(self, run: ReportRun, *, now: datetime) -> None:
+        current_time = _as_utc(now)
+        if run.lease_owner and run.lease_owner != self._worker_id:
+            if run.lease_expires_at is None or _as_utc(run.lease_expires_at) > current_time:
+                raise RunLeaseConflictError(f"run lease is held by {run.lease_owner}")
+        run.lease_owner = self._worker_id
+        run.lease_expires_at = current_time + timedelta(seconds=self._run_lease_seconds)
+        run.heartbeat_at = current_time
+        run.version = (run.version or 0) + 1
+
+    def _release_run_lease(self, run: ReportRun, *, now: datetime) -> None:
+        if run.lease_owner not in {None, self._worker_id}:
+            raise RunLeaseConflictError(f"run lease is held by {run.lease_owner}")
+        run.lease_owner = None
+        run.lease_expires_at = None
+        run.heartbeat_at = _as_utc(now)
+
 
 class WorkflowWorker:
     def __init__(
@@ -732,6 +770,7 @@ class WorkflowWorker:
         collection_service: CollectionService | None = None,
         metrics_service: MetricsService | None = None,
         reporting_service: ReportingService | None = None,
+        worker_id: str | None = None,
     ) -> None:
         self._runtime = WorkflowRuntime(
             session_factory,
@@ -739,6 +778,7 @@ class WorkflowWorker:
             collection_service=collection_service,
             metrics_service=metrics_service,
             reporting_service=reporting_service,
+            worker_id=worker_id,
         )
 
     def recover_waiting_runs(self) -> list[str]:
@@ -747,8 +787,15 @@ class WorkflowWorker:
     def recover_partial_failed_runs(self) -> list[str]:
         return self._runtime.recover_partial_failed_run_ids()
 
+    def recover_expired_run_ids(self, *, now: datetime | None = None) -> list[str]:
+        return self._runtime.recover_expired_run_ids(now=now)
+
     def resume(self, run_id: str, resume_payload: Mapping[str, object]) -> WorkflowExecutionResult:
         return self._runtime.resume(run_id, resume_payload)
 
     def inspect(self, run_id: str) -> StateSnapshot | None:
         return self._runtime.inspect(run_id)
+
+
+def _as_utc(value: datetime) -> datetime:
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)

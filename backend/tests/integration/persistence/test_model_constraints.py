@@ -11,6 +11,7 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "admin_sessions",
         "admin_users",
         "async_jobs",
+        "audit_logs",
         "callback_events",
         "diagnosis_records",
         "encrypted_credentials",
@@ -21,11 +22,13 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "feishu_message_deliveries",
         "human_approvals",
         "login_audits",
+        "llm_executions",
         "metric_snapshots",
         "model_configs",
         "normalized_entities",
         "normalized_snapshots",
-        "audit_logs",
+        "node_executions",
+        "onboarding_sessions",
         "outbox_messages",
         "project_repositories",
         "projects",
@@ -37,8 +40,6 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         "report_runs",
         "report_versions",
         "run_status_history",
-        "llm_executions",
-        "node_executions",
         "schedule_configs",
         "side_effect_attempts",
         "side_effect_operations",
@@ -131,10 +132,10 @@ def test_t8_tables_and_unique_idempotency_constraint_exist() -> None:
         for constraint in inspector.get_unique_constraints("tool_executions")
     )
     assert any(
-        index["column_names"] == ["run_id", "started_at"]
+        index["name"] == "ix_tool_executions_run_started"
         for index in inspector.get_indexes("tool_executions")
     )
     assert any(
-        index["column_names"] == ["tool_name", "status", "started_at"]
+        index["name"] == "ix_tool_executions_tool_status_started"
         for index in inspector.get_indexes("tool_executions")
     )

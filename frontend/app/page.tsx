@@ -9,14 +9,20 @@ export default function HomePage() {
             <p className="kicker">Feishu Project Weekly Agent</p>
             <h1 className="title">Run detail and workflow trace</h1>
             <p className="lede">
-              Open <code>/admin/runs/&lt;run_id&gt;</code> to inspect the minimal execution view,
-              including approvals, tool summaries, artifacts, side effects, and live polling.
+              Open the admin dashboard, run list, or a specific run detail page to inspect the
+              execution trace, approvals, tool summaries, artifacts, and side effects.
             </p>
           </div>
           <div className="hero-meta">
             <span className="status-pill">local-demo</span>
+            <Link className="meta-chip link-chip" href="/admin/dashboard">
+              Open dashboard
+            </Link>
+            <Link className="meta-chip link-chip" href="/admin/runs">
+              Open run list
+            </Link>
             <Link className="meta-chip link-chip" href="/admin/runs/replace-with-run-id">
-              Open a run detail
+              Open run detail
             </Link>
             <Link className="meta-chip link-chip" href="/admin/configuration">
               Open configuration

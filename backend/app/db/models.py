@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
@@ -215,11 +216,42 @@ class EncryptedCredential(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class OnboardingSession(Base):
+    __tablename__ = "onboarding_sessions"
+    __table_args__ = (
+        Index("ix_onboarding_sessions_actor_status", "feishu_actor_id", "status"),
+        Index(
+            "uq_onboarding_sessions_active_actor",
+            "feishu_actor_id",
+            unique=True,
+            sqlite_where=text("status IN ('in_progress', 'pending_confirmation')"),
+            postgresql_where=text("status IN ('in_progress', 'pending_confirmation')"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
+    feishu_actor_id: Mapped[str] = mapped_column(String(128))
+    status: Mapped[str] = mapped_column(String(24), default="in_progress")
+    current_step: Mapped[str] = mapped_column(String(64), default="permissions")
+    draft_config: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    credential_ref: Mapped[str | None] = mapped_column(
+        ForeignKey("encrypted_credentials.id"), nullable=True, index=True
+    )
+    card_message_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    revision: Mapped[int] = mapped_column(Integer, default=1)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class ReportRun(Base):
     __tablename__ = "report_runs"
     __table_args__ = (
         UniqueConstraint("thread_id", name="uq_report_runs_thread_id"),
         UniqueConstraint("project_id", "period_key", name="uq_report_runs_project_period"),
+        Index("ix_report_runs_status_lease_expires_at", "status", "lease_expires_at"),
     )
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     project_id: Mapped[str] = mapped_column(ForeignKey("projects.id"), index=True)
@@ -233,9 +265,13 @@ class ReportRun(Base):
     scope_revision: Mapped[int] = mapped_column(Integer, default=1)
     current_stage: Mapped[str] = mapped_column(String(40), default="created")
     current_node: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_publish_plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("publish_plans.id"), nullable=True, index=True
     )
+    version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -522,23 +558,21 @@ class NodeExecution(Base):
 class LlmExecution(Base):
     __tablename__ = "llm_executions"
     __table_args__ = (
-        Index("ix_llm_executions_run_created", "run_id", "created_at"),
-        Index("ix_llm_executions_node_created", "node_execution_id", "created_at"),
+        Index("ix_llm_executions_run_created_at", "run_id", "created_at"),
+        Index("ix_llm_executions_node_created_at", "node_execution_id", "created_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     run_id: Mapped[str] = mapped_column(
         ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
     )
-    node_execution_id: Mapped[str] = mapped_column(String(128))
+    node_execution_id: Mapped[str] = mapped_column(String(128), index=True)
     provider: Mapped[str] = mapped_column(String(64))
     model: Mapped[str] = mapped_column(String(128))
-    prompt_type: Mapped[str] = mapped_column(String(32))
-    prompt_version_id: Mapped[str | None] = mapped_column(
-        ForeignKey("prompt_versions.id"), nullable=True, index=True
-    )
+    prompt_type: Mapped[str] = mapped_column(String(64))
+    prompt_version_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     input_hash: Mapped[str] = mapped_column(String(64))
-    output_ref: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    output_ref: Mapped[str | None] = mapped_column(String(256), nullable=True)
     status: Mapped[str] = mapped_column(String(24))
     schema_valid: Mapped[bool] = mapped_column(Boolean, default=False)
     input_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -546,24 +580,28 @@ class LlmExecution(Base):
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
 
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
     __table_args__ = (
-        Index("ix_audit_logs_run_occurred_at", "run_id", "occurred_at"),
-        Index("ix_audit_logs_actor_occurred_at", "actor_id", "occurred_at"),
-        Index("ix_audit_logs_action_occurred_at", "action", "occurred_at"),
+        Index("ix_audit_logs_run_occurred", "run_id", "occurred_at"),
+        Index("ix_audit_logs_actor_occurred", "actor_id", "occurred_at"),
+        Index("ix_audit_logs_action_occurred", "action", "occurred_at"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     request_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
     run_id: Mapped[str | None] = mapped_column(
-        ForeignKey("report_runs.id", ondelete="SET NULL"), nullable=True, index=True
+        ForeignKey("report_runs.id", ondelete="CASCADE"), nullable=True, index=True
     )
-    actor_type: Mapped[str] = mapped_column(String(32))
+    actor_type: Mapped[str] = mapped_column(String(16))
     actor_id: Mapped[str] = mapped_column(String(128))
     action: Mapped[str] = mapped_column(String(64))
     resource_type: Mapped[str] = mapped_column(String(64))
@@ -571,7 +609,7 @@ class AuditLog(Base):
     before_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     after_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     result: Mapped[str] = mapped_column(String(24))
-    ip_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ip_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     metadata_: Mapped[dict[str, object]] = mapped_column("metadata", JSON, default=dict)
 
 
@@ -703,6 +741,7 @@ class SideEffectOperation(Base):
         UniqueConstraint("publish_plan_id", "sequence", name="uq_side_effect_operations_sequence"),
         UniqueConstraint("idempotency_key", name="uq_side_effect_operations_idempotency_key"),
         Index("ix_side_effect_operations_run_status", "run_id", "status"),
+        Index("ix_side_effect_operations_status_lease_expires_at", "status", "lease_expires_at"),
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
@@ -721,6 +760,9 @@ class SideEffectOperation(Base):
     idempotency_key: Mapped[str] = mapped_column(String(128))
     status: Mapped[str] = mapped_column(String(24), default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_resource_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     external_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     provider_request_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -939,7 +981,9 @@ class ToolExecution(Base):
     run_id: Mapped[str] = mapped_column(
         ForeignKey("report_runs.id", ondelete="CASCADE"), index=True
     )
-    node_execution_id: Mapped[str] = mapped_column(String(128))
+    node_execution_id: Mapped[str] = mapped_column(
+        ForeignKey("node_executions.id", ondelete="CASCADE"), index=True
+    )
     tool_name: Mapped[str] = mapped_column(String(128))
     tool_version: Mapped[str] = mapped_column(String(32))
     attempt: Mapped[int] = mapped_column(Integer)

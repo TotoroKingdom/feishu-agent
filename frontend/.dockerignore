@@ -1,0 +1,13 @@
+.next
+node_modules
+.turbo
+.pytest_cache
+.ruff_cache
+__pycache__
+*.pyc
+*.pyo
+tests
+scripts
+.worktrees
+.idea
+.git

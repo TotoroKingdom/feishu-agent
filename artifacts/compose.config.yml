@@ -1,0 +1,108 @@
+name: feishu-agent
+services:
+  backend:
+    build:
+      context: C:\AI\feishu-agent\backend
+      dockerfile: Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+        required: true
+      redis:
+        condition: service_healthy
+        required: true
+    environment:
+      DATABASE_URL: postgresql+psycopg://feishu_agent:change-me@postgres:5432/feishu_agent
+      REDIS_URL: redis://redis:6379/0
+    expose:
+      - "8000"
+    image: feishu-agent/backend:latest
+    networks:
+      default: null
+  frontend:
+    build:
+      context: C:\AI\feishu-agent\frontend
+      dockerfile: Dockerfile
+      args:
+        BACKEND_BASE_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: true
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+    expose:
+      - "3000"
+    image: feishu-agent/frontend:latest
+    networks:
+      default: null
+  nginx:
+    build:
+      context: C:\AI\feishu-agent\deploy\nginx
+      dockerfile: Dockerfile
+    depends_on:
+      backend:
+        condition: service_healthy
+        required: true
+      frontend:
+        condition: service_healthy
+        required: true
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1/health
+      timeout: 5s
+      interval: 10s
+      retries: 5
+    image: feishu-agent/nginx:latest
+    networks:
+      default: null
+    ports:
+      - mode: ingress
+        target: 80
+        published: "8080"
+        protocol: tcp
+      - mode: ingress
+        target: 443
+        published: "8443"
+        protocol: tcp
+  postgres:
+    environment:
+      POSTGRES_DB: feishu_agent
+      POSTGRES_PASSWORD: change-me
+      POSTGRES_USER: feishu_agent
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U feishu_agent -d feishu_agent
+      timeout: 5s
+      interval: 5s
+      retries: 5
+    image: postgres:16.6-alpine
+    networks:
+      default: null
+    volumes:
+      - type: volume
+        source: postgres-data
+        target: /var/lib/postgresql/data
+        volume: {}
+  redis:
+    healthcheck:
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      timeout: 5s
+      interval: 5s
+      retries: 5
+    image: redis:7.4-alpine
+    networks:
+      default: null
+networks:
+  default:
+    name: feishu-agent_default
+volumes:
+  postgres-data:
+    name: feishu-agent_postgres-data

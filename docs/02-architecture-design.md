@@ -740,3 +740,13 @@ T1 记录规则补充：每项能力还必须写明负责人或前置条件、�
 4. 未取得真实 Contract Test 前，不冻结飞书回调字段、GitHub 权限/分页语义或 LLM 原生 schema/usage 语义，也不得开始依赖这些未验证细节的后续编码。
 
 T4 正式验收仍为阻塞：配置已就绪，但阻塞性未知项尚未清零。需要分别运行真实飞书、GitHub 和 LLM Contract Test，记录脱敏响应、权限范围、错误分类和模型能力后，才能将本节状态从“条件冻结”改为正式冻结。
+
+### 5.7 T44 真实平台预检记录（2026-07-31）
+
+本轮在显式执行 T44 时进行了不产生业务写入的真实平台预检，所有输出均只保留状态、计数和错误分类：
+
+- 飞书自建应用成功取得 `tenant_access_token`，但读取测试多维表格字段和记录均返回 HTTP 400、业务码 `99991672`。平台明确指出应用身份缺少 `bitable:app:readonly`、`bitable:app` 或 `base:field:read` 中至少一项；因此 F-07/F-08 仍为 `unverified`，本轮未发送卡片、创建文档、发送群消息或写入归档。
+- 当前 Fine-grained PAT 访问两个测试仓库均返回 HTTP 404。该响应无法区分仓库标识错误、仓库未授权或组织策略隐藏，因此 G-01–G-10 仍为 `unverified`，本轮未进行任何 GitHub 写操作。
+- 当前配置的模型名返回 HTTP 400 `invalid_request_error`；在不修改密钥的情况下用 Provider 当前允许的 `deepseek-v4-flash` 进行最小探测，得到 HTTP 200、合法 JSON Output 和完整 usage 字段。该结果仅证明鉴权、该模型的最小 JSON 输出和 usage 可用；429、timeout、非法 schema、成本和数据策略仍未验证，所以 L-01–L-03 继续保持 `unverified`。
+
+以上结果属于真实预检证据，不等同于 Contract Test 或 E2E。取得飞书权限、GitHub 仓库授权和明确的真实发布批准后，仍需执行 F-01–F-10、G-01–G-10、L-01–L-03 的完整矩阵并记录真实 `run_id`。

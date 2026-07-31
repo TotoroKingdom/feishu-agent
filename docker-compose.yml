@@ -1,33 +1,53 @@
 services:
   backend:
+    image: feishu-agent/backend:latest
     build:
       context: ./backend
       dockerfile: Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg://feishu_agent:change-me@postgres:5432/feishu_agent
       REDIS_URL: redis://redis:6379/0
-    ports:
-      - "8000:8000"
+    expose:
+      - "8000"
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
 
   frontend:
+    image: feishu-agent/frontend:latest
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
+      args:
+        BACKEND_BASE_URL: http://backend:8000
+    environment:
+      BACKEND_BASE_URL: http://backend:8000
+    expose:
+      - "3000"
     depends_on:
       backend:
         condition: service_healthy
+
+  nginx:
+    image: feishu-agent/nginx:latest
+    build:
+      context: ./deploy/nginx
+      dockerfile: Dockerfile
+    ports:
+      - "8080:80"
+      - "8443:443"
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
   postgres:
     image: postgres:16.6-alpine
@@ -35,8 +55,6 @@ services:
       POSTGRES_DB: feishu_agent
       POSTGRES_USER: feishu_agent
       POSTGRES_PASSWORD: change-me
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -47,8 +65,6 @@ services:
 
   redis:
     image: redis:7.4-alpine
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
