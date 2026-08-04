@@ -2,13 +2,20 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import MetricSnapshot, NormalizedEntity, NormalizedSnapshot, ReportRun, ToolExecution, new_id
+from app.db.models import (
+    MetricSnapshot,
+    NormalizedEntity,
+    NormalizedSnapshot,
+    ReportRun,
+    ToolExecution,
+    new_id,
+)
 from app.domain.metrics import METRICS_DEFINITION_VERSION
 from app.domain.source import canonical_json_hash
 from app.reports.metrics import build_metric_snapshot_content_hash, calculate_metric_payload
@@ -132,7 +139,7 @@ class MetricsService:
         )
         if existing is not None:
             return existing
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         record = ToolExecution(
             id=new_id(),
             run_id=run_id,
@@ -186,5 +193,5 @@ def _entity_to_dict(entity: NormalizedEntity) -> dict[str, object]:
 
 def _to_utc_datetime(value: date | datetime) -> datetime:
     if isinstance(value, date) and not isinstance(value, datetime):
-        return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return datetime(value.year, value.month, value.day, tzinfo=UTC)
+    return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)

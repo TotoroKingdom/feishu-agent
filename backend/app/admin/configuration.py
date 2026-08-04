@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -15,9 +15,9 @@ from app.db.models import (
     FeishuFieldMapping,
     FeishuResource,
     ModelConfig,
-    PromptVersion,
     Project,
     ProjectRepository,
+    PromptVersion,
     new_id,
 )
 from app.domain.source import canonical_json_hash
@@ -193,7 +193,9 @@ class AdminConfigurationService:
             session.commit()
             return self._repository_payload(row)
 
-    def update_repository(self, repository_id: str, payload: RepositoryUpdateRequest) -> dict[str, object]:
+    def update_repository(
+        self, repository_id: str, payload: RepositoryUpdateRequest
+    ) -> dict[str, object]:
         with self.session_factory() as session:
             row = self._load_repository(session, repository_id)
             if payload.revision != row.revision:
@@ -306,7 +308,9 @@ class AdminConfigurationService:
             session.commit()
             return self._feishu_resource_payload(row)
 
-    def update_feishu_schema(self, resource_id: str, payload: FeishuSchemaRequest) -> dict[str, object]:
+    def update_feishu_schema(
+        self, resource_id: str, payload: FeishuSchemaRequest
+    ) -> dict[str, object]:
         with self.session_factory() as session:
             row = self._load_feishu_resource(session, resource_id)
             if payload.revision != row.revision:
@@ -494,11 +498,13 @@ class AdminConfigurationService:
             )
             session.add(job)
             session.flush()
-            result_summary = _jsonable({
-                "github": self._build_github_connectivity_snapshot(session),
-                "feishu": self._build_feishu_connectivity_snapshot(session),
-                "llm": self._build_llm_connectivity_snapshot(session, model_config),
-            })
+            result_summary = _jsonable(
+                {
+                    "github": self._build_github_connectivity_snapshot(session),
+                    "feishu": self._build_feishu_connectivity_snapshot(session),
+                    "llm": self._build_llm_connectivity_snapshot(session, model_config),
+                }
+            )
             job.status = "succeeded"
             job.result_summary = result_summary
             job.completed_at = datetime.now(UTC)
@@ -562,7 +568,9 @@ class AdminConfigurationService:
             "milestones": "ok",
             "contributors": "ok",
         }
-        status = "ok" if rows and all(value == "ok" for value in capabilities.values()) else "degraded"
+        status = (
+            "ok" if rows and all(value == "ok" for value in capabilities.values()) else "degraded"
+        )
         return {
             "status": status,
             "capabilities": capabilities,

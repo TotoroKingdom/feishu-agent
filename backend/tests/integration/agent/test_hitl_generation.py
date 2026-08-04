@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent.runtime import WorkflowRuntime
-from app.agent.state import thread_id_for_run
 from app.db.models import Base, HumanApproval, MetricSnapshot, Project, ReportRun
 from app.domain.runs import RunCreationService
 
@@ -68,9 +67,15 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
-    first_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
-    duplicate_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    waiting_publish = runtime.resume(
+        run_id, _approval_payload(started.snapshot, "approve_generation")
+    )
+    first_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
+    duplicate_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
 
     assert started.status == "waiting"
     assert started.snapshot.values["current_stage"] == "waiting_confirmation"  # type: ignore[index]
@@ -86,7 +91,9 @@ def test_generation_confirmation_approve_and_duplicate_resume_are_idempotent() -
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
         approvals = session.scalars(
-            select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.revision)
+            select(HumanApproval)
+            .where(HumanApproval.run_id == run_id)
+            .order_by(HumanApproval.revision)
         ).all()
 
         assert run_row is not None
@@ -125,13 +132,18 @@ def test_generation_confirmation_modify_creates_new_revision_and_requeues_confir
     assert modified.snapshot.values["scope_revision"] == 2  # type: ignore[index]
     assert modified.snapshot.values["approval"]["approval_revision"] == 2  # type: ignore[index]
     assert modified.snapshot.values["approval"]["status"] == "pending"  # type: ignore[index]
-    assert modified.snapshot.values["scope"]["scope_hash"] != started.snapshot.values["scope"]["scope_hash"]  # type: ignore[index]
+    assert (
+        modified.snapshot.values["scope"]["scope_hash"]
+        != started.snapshot.values["scope"]["scope_hash"]
+    )  # type: ignore[index]
     assert stale_repeat.status == "waiting"
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         approvals = session.scalars(
-            select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.revision)
+            select(HumanApproval)
+            .where(HumanApproval.run_id == run_id)
+            .order_by(HumanApproval.revision)
         ).all()
 
         assert run_row is not None
@@ -164,7 +176,9 @@ def test_generation_confirmation_terminal_actions(
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
-        approvals = session.scalars(select(HumanApproval).where(HumanApproval.run_id == run_id)).all()
+        approvals = session.scalars(
+            select(HumanApproval).where(HumanApproval.run_id == run_id)
+        ).all()
 
         assert run_row is not None
         assert run_row.status == expected_status

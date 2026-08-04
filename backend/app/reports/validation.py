@@ -38,7 +38,9 @@ def validate_normalized_entities(
         if source_type in source_counts:
             source_counts[source_type] += 1
         if not external_id:
-            critical_items.append(f"{source_type or 'unknown'}:{entity_type or 'unknown'}:external_id:{index}")
+            critical_items.append(
+                f"{source_type or 'unknown'}:{entity_type or 'unknown'}:external_id:{index}"
+            )
         if not entity.get("title"):
             warnings.append(f"{source_type or 'unknown'}:{entity_type or 'unknown'}:title:{index}")
         if (

@@ -66,7 +66,9 @@ def test_runtime_start_interrupt_resume_and_repeat_start_are_stable() -> None:
         "actor_id": "local-demo",
     }
     waiting_publish = runtime.resume(run_id, resume_payload)
-    publish_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    publish_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
     completed = runtime.inspect(run_id)
 
     assert first.status == "waiting"

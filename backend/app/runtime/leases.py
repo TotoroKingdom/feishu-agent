@@ -8,17 +8,17 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    AuditLog,
     AsyncJob,
+    AuditLog,
     CallbackEvent,
     EncryptedCredential,
-    ReportVersion,
     LlmExecution,
     NodeExecution,
     NormalizedEntity,
     OnboardingSession,
     OutboxMessage,
     ReportRun,
+    ReportVersion,
     SideEffectOperation,
     SourceDataBatch,
     ToolExecution,
@@ -466,13 +466,18 @@ class DataLifecycleService:
             or (
                 row.status in {"failed", "dead_lettered"}
                 and (
-                    (row.dead_lettered_at is not None and _as_utc(row.dead_lettered_at) <= failure_cutoff)
+                    (
+                        row.dead_lettered_at is not None
+                        and _as_utc(row.dead_lettered_at) <= failure_cutoff
+                    )
                     or _as_utc(row.created_at) <= failure_cutoff
                 )
             )
         ]
         if not dry_run and deletions:
-            session.execute(delete(OutboxMessage).where(OutboxMessage.id.in_([row.id for row in deletions])))
+            session.execute(
+                delete(OutboxMessage).where(OutboxMessage.id.in_([row.id for row in deletions]))
+            )
         return len(deletions)
 
     def _delete_callback_events(
@@ -496,7 +501,9 @@ class DataLifecycleService:
             and _as_utc(row.received_at) <= cutoff
         ]
         if not dry_run and deletions:
-            session.execute(delete(CallbackEvent).where(CallbackEvent.id.in_([row.id for row in deletions])))
+            session.execute(
+                delete(CallbackEvent).where(CallbackEvent.id.in_([row.id for row in deletions]))
+            )
         return len(deletions)
 
     def _delete_async_jobs(
@@ -545,7 +552,9 @@ class DataLifecycleService:
             .order_by(OnboardingSession.created_at, OnboardingSession.id)
         ).all()
         if dry_run:
-            credential_deletes = sum(1 for row in rows if row.status in {"cancelled", "expired"} and row.credential_ref)
+            credential_deletes = sum(
+                1 for row in rows if row.status in {"cancelled", "expired"} and row.credential_ref
+            )
             return len(rows), credential_deletes
 
         deleted = 0

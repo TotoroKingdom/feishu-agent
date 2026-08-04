@@ -44,7 +44,9 @@ class Settings(BaseSettings):
             raise ValueError("production cannot use fake providers")
         if self.app_profile == "production" and self.app_encryption_key is None:
             raise ValueError("production requires app_encryption_key")
-        if self.app_profile == "production" and not self._looks_strong(self.admin_initial_password.get_secret_value()):
+        if self.app_profile == "production" and not self._looks_strong(
+            self.admin_initial_password.get_secret_value()
+        ):
             raise ValueError("production requires a strong admin_initial_password")
         if self.feishu_provider == "real":
             if self.feishu_app_id is None:

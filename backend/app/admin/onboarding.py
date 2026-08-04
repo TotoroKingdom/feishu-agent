@@ -16,9 +16,9 @@ from app.db.models import (
     FeishuFieldMapping,
     FeishuResource,
     OnboardingSession,
-    PromptVersion,
     Project,
     ProjectRepository,
+    PromptVersion,
     new_id,
 )
 from app.domain.source import canonical_json_hash
@@ -101,7 +101,11 @@ class AdminOnboardingService:
                 session.flush()
 
             latest = self._load_latest_session(session, feishu_actor_id)
-            if latest is not None and latest.status in ACTIVE_ONBOARDING_STATUSES and self._is_expired(latest):
+            if (
+                latest is not None
+                and latest.status in ACTIVE_ONBOARDING_STATUSES
+                and self._is_expired(latest)
+            ):
                 self._expire_session(session, latest)
                 session.flush()
 
@@ -136,13 +140,17 @@ class AdminOnboardingService:
                 session.commit()
             return self._session_payload(row)
 
-    def update_draft(self, session_id: str, payload: OnboardingDraftRequest) -> OnboardingSessionView:
+    def update_draft(
+        self, session_id: str, payload: OnboardingDraftRequest
+    ) -> OnboardingSessionView:
         with self.session_factory() as session:
             row = self._load_session(session, session_id)
             if row.status in TERMINAL_ONBOARDING_STATUSES:
                 return self._session_payload(row)
 
-            row.draft_config = _merge_draft(row.draft_config or {}, payload.model_dump(mode="python"))
+            row.draft_config = _merge_draft(
+                row.draft_config or {}, payload.model_dump(mode="python")
+            )
             row.current_step = "resources"
             row.status = "in_progress"
             row.revision += 1
@@ -386,7 +394,9 @@ class AdminOnboardingService:
                 existing_prompt.content_hash = canonical_json_hash(content)
                 existing_prompt.status = "active"
                 existing_prompt.model_constraints = model_constraints
-                existing_prompt.created_by = str(prompt_data.get("created_by") or existing_prompt.created_by)
+                existing_prompt.created_by = str(
+                    prompt_data.get("created_by") or existing_prompt.created_by
+                )
             session.query(PromptVersion).filter(
                 PromptVersion.prompt_type == prompt_type,
                 PromptVersion.id != existing_prompt.id,
@@ -491,14 +501,18 @@ class AdminOnboardingService:
             session.flush()
         return row
 
-    def _load_latest_session(self, session: Session, feishu_actor_id: str) -> OnboardingSession | None:
+    def _load_latest_session(
+        self, session: Session, feishu_actor_id: str
+    ) -> OnboardingSession | None:
         return session.scalar(
             select(OnboardingSession)
             .where(OnboardingSession.feishu_actor_id == feishu_actor_id)
             .order_by(OnboardingSession.updated_at.desc(), OnboardingSession.created_at.desc())
         )
 
-    def _load_active_session(self, session: Session, feishu_actor_id: str) -> OnboardingSession | None:
+    def _load_active_session(
+        self, session: Session, feishu_actor_id: str
+    ) -> OnboardingSession | None:
         return session.scalar(
             select(OnboardingSession)
             .where(
@@ -573,7 +587,8 @@ def _merge_draft(current: Mapping[str, object], update: Mapping[str, object]) ->
             if key in {"repositories", "feishu_resources", "recipients"}:
                 merged[key] = (
                     list(value)
-                    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+                    if isinstance(value, Sequence)
+                    and not isinstance(value, str | bytes | bytearray)
                     else []
                 )
             elif key == "field_mappings":
@@ -606,13 +621,13 @@ def _as_mapping(value: object) -> dict[str, object]:
 
 
 def _as_list(value: object) -> list[dict[str, object]]:
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [dict(item) for item in value if isinstance(item, Mapping)]
     return []
 
 
 def _as_string_list(value: object) -> list[str]:
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [str(item) for item in value if isinstance(item, str) and item.strip()]
     return []
 

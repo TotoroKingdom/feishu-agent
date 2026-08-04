@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.domain.metrics import (
     LONG_REVIEW_PR_AGE_DAYS,
@@ -16,11 +16,11 @@ from app.domain.metrics import (
     METRIC_GITHUB_PR_MERGED_COUNT,
     METRIC_GITHUB_PR_TOTAL_COUNT,
     METRIC_KEYS,
-    METRICS_DEFINITION_VERSION,
     METRIC_MILESTONE_COMPLETION_RATE,
     METRIC_PLAN_TASK_COMPLETION_RATE,
-    MetricComputedValue,
+    METRICS_DEFINITION_VERSION,
     OVERDUE_ISSUE_AGE_DAYS,
+    MetricComputedValue,
 )
 from app.domain.source import canonical_json_hash
 
@@ -49,9 +49,7 @@ def calculate_metric_payload(
 
     open_issues = [entity for entity in github_issues if _issue_state(entity) == "open"]
     closed_issues = [entity for entity in github_issues if _issue_state(entity) == "closed"]
-    overdue_issues = [
-        entity for entity in open_issues if _is_overdue_issue(entity, period_end_dt)
-    ]
+    overdue_issues = [entity for entity in open_issues if _is_overdue_issue(entity, period_end_dt)]
     merged_pull_requests = [
         entity for entity in github_pull_requests if _pull_request_state(entity) == "merged"
     ]
@@ -108,7 +106,8 @@ def calculate_metric_payload(
         METRIC_GITHUB_PR_LONG_REVIEW_COUNT: _metric_value(
             len(long_review_pull_requests),
             "count",
-            f"Count of open GitHub pull requests older than {LONG_REVIEW_PR_AGE_DAYS} days without an approved review state",
+            f"Count of open GitHub pull requests older than {LONG_REVIEW_PR_AGE_DAYS} days "
+            "without an approved review state",
             "github_pull_request",
         ),
         METRIC_GITHUB_COMMIT_COUNT: _metric_value(
@@ -152,7 +151,9 @@ def calculate_metric_payload(
         "github_review_count": len(github_reviews),
         "github_milestone_count": len(github_milestones),
         "feishu_record_count": len(feishu_records),
-        "member_activity_breakdown": _build_member_activity_breakdown(filtered_entities, period_end_dt),
+        "member_activity_breakdown": _build_member_activity_breakdown(
+            filtered_entities, period_end_dt
+        ),
     }
     payload["content_hash"] = build_metric_snapshot_content_hash(payload)
     return payload
@@ -194,11 +195,7 @@ def _metric_value(value: int, unit: str, description: str, source_scope: str) ->
 def _select_entities(
     entities: Sequence[Mapping[str, object]], entity_type: str
 ) -> list[Mapping[str, object]]:
-    return [
-        entity
-        for entity in entities
-        if str(entity.get("entity_type") or "") == entity_type
-    ]
+    return [entity for entity in entities if str(entity.get("entity_type") or "") == entity_type]
 
 
 def _build_member_activity_breakdown(
@@ -310,13 +307,13 @@ def _dedupe_entities(entities: Sequence[Mapping[str, object]]) -> list[Mapping[s
 
 def _pick_datetime(value: object) -> datetime | None:
     if isinstance(value, datetime):
-        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
     if isinstance(value, str) and value:
         try:
             parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
         except ValueError:
             return None
-        return parsed.astimezone(timezone.utc) if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(UTC) if parsed.tzinfo else parsed.replace(tzinfo=UTC)
     return None
 
 
@@ -350,7 +347,10 @@ def _is_long_review_pull_request(entity: Mapping[str, object], period_end: datet
         return False
     if review_count <= 0:
         return anchor < period_end - timedelta(days=LONG_REVIEW_PR_AGE_DAYS)
-    return latest_review_state not in {"approved", "changes_requested"} and anchor < period_end - timedelta(days=LONG_REVIEW_PR_AGE_DAYS)
+    return latest_review_state not in {
+        "approved",
+        "changes_requested",
+    } and anchor < period_end - timedelta(days=LONG_REVIEW_PR_AGE_DAYS)
 
 
 def _is_overdue_issue(entity: Mapping[str, object], period_end: datetime) -> bool:
@@ -400,9 +400,9 @@ def _within_period(
 
 def _to_utc_datetime(value: date | datetime) -> datetime:
     if isinstance(value, datetime):
-        return value.astimezone(timezone.utc) if value.tzinfo else value.replace(tzinfo=timezone.utc)
-    return datetime.combine(value, time.min, tzinfo=timezone.utc)
+        return value.astimezone(UTC) if value.tzinfo else value.replace(tzinfo=UTC)
+    return datetime.combine(value, time.min, tzinfo=UTC)
 
 
 def _to_iso_string(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat()
+    return value.astimezone(UTC).isoformat()

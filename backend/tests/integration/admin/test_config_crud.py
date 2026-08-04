@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from app.db.models import Project
-
 from ._helpers import make_admin_client
 
 
@@ -118,4 +116,3 @@ def test_admin_configuration_crud_flow() -> None:
     job_get_response = client.get(f"/api/v1/admin/connectivity-jobs/{job['id']}")
     assert job_get_response.status_code == 200
     assert job_get_response.json()["data"]["id"] == job["id"]
-

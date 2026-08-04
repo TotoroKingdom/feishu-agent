@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.agent.runtime import WorkflowWorker
-from app.db.models import Base, Project, ReportRun, ReportVersion, SideEffectOperation
+from app.db.models import Base, Project, ReportVersion, SideEffectOperation
 from app.domain.runs import RunCreationService
 from app.publishing.service import PublishingService
 from app.runtime.leases import RunLeaseConflictError, RunLeaseService
@@ -64,7 +64,9 @@ def test_run_lease_blocks_second_worker_until_expiry_and_advances_fencing_token(
     assert acquired.version == 2
     assert acquired.lease_expires_at == started_at + timedelta(seconds=30)
 
-    heartbeat = lease_service.heartbeat_run_lease(run_id, worker_id=worker_a, now=started_at + timedelta(seconds=10))
+    heartbeat = lease_service.heartbeat_run_lease(
+        run_id, worker_id=worker_a, now=started_at + timedelta(seconds=10)
+    )
     assert heartbeat.version == 3
     assert heartbeat.lease_expires_at == started_at + timedelta(seconds=40)
 
@@ -140,5 +142,7 @@ def test_run_lease_blocks_second_worker_until_expiry_and_advances_fencing_token(
             now=started_at + timedelta(seconds=12),
         )
 
-    stale_operations = lease_service.recover_expired_operation_ids(now=started_at + timedelta(seconds=50))
+    stale_operations = lease_service.recover_expired_operation_ids(
+        now=started_at + timedelta(seconds=50)
+    )
     assert stale_operations == ["op-lease"]

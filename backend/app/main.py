@@ -1,5 +1,5 @@
-import re
 import hmac
+import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import date
 from uuid import uuid4
@@ -11,7 +11,29 @@ from pydantic import BaseModel
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
+from app.admin.auth import (
+    CSRF_COOKIE_NAME,
+    CSRF_HEADER_NAME,
+    AdminAuthenticationError,
+    AdminAuthPayload,
+    AdminAuthService,
+    AdminLockoutError,
+    AdminLoginRequest,
+)
+from app.admin.configuration import (
+    AdminConfigurationService,
+    ConfigurationNotFoundError,
+    FeishuFieldMappingsRequest,
+    FeishuResourceCreateRequest,
+    FeishuResourceUpdateRequest,
+    FeishuSchemaRequest,
+    ModelConfigUpdateRequest,
+    ProjectUpdateRequest,
+    PromptVersionCreateRequest,
+    RepositoryCreateRequest,
+    RepositoryUpdateRequest,
+    RevisionConflictError,
+)
 from app.admin.onboarding import (
     AdminOnboardingService,
     OnboardingAuthorizationError,
@@ -21,41 +43,14 @@ from app.admin.onboarding import (
     OnboardingNotFoundError,
     OnboardingStartRequest,
 )
+from app.admin.run_detail import RunDetailNotFoundError, RunDetailService
 from app.agent.runtime import WorkflowRuntime
-from app.admin.configuration import (
-    AdminConfigurationService,
-    ConfigurationNotFoundError,
-    FeishuFieldMappingsRequest,
-    FeishuResourceCreateRequest,
-    FeishuResourceUpdateRequest,
-    FeishuSchemaRequest,
-    ModelConfigUpdateRequest,
-    PromptVersionCreateRequest,
-    ProjectUpdateRequest,
-    RepositoryCreateRequest,
-    RepositoryUpdateRequest,
-    RevisionConflictError,
-)
-from app.admin.auth import (
-    CSRF_COOKIE_NAME,
-    CSRF_HEADER_NAME,
-    AdminAuthService,
-    AdminAuthenticationError,
-    AdminAuthPayload,
-    AdminLoginRequest,
-    AdminLockoutError,
-)
 from app.core.config import Settings
 from app.db.models import Project
 from app.domain.runs import RunCreationService
-from app.observability.query import RunObservabilityNotFoundError, RunObservabilityQueryService
-from app.scheduler.service import (
-    RevisionConflictError as ScheduleRevisionConflictError,
-    ScheduleConfigUpdateRequest,
-    ScheduleService,
-)
 from app.observability.context import request_id_context
 from app.observability.logging import configure_json_logging
+from app.observability.query import RunObservabilityNotFoundError, RunObservabilityQueryService
 from app.providers.feishu import (
     FeishuAuthError,
     FeishuCallbackConflictError,
@@ -63,6 +58,13 @@ from app.providers.feishu import (
     FeishuCallbackValidationError,
     FeishuCardActionRequest,
     FeishuEventRequest,
+)
+from app.scheduler.service import (
+    RevisionConflictError as ScheduleRevisionConflictError,
+)
+from app.scheduler.service import (
+    ScheduleConfigUpdateRequest,
+    ScheduleService,
 )
 
 RequestCheck = Callable[[], bool]
@@ -150,8 +152,10 @@ def create_app(
                 if request.method not in {"GET", "HEAD", "OPTIONS"}:
                     csrf_token = request.headers.get(CSRF_HEADER_NAME)
                     csrf_cookie = request.cookies.get(CSRF_COOKIE_NAME)
-                    if not csrf_token or not csrf_cookie or not hmac.compare_digest(
-                        csrf_token, csrf_cookie
+                    if (
+                        not csrf_token
+                        or not csrf_cookie
+                        or not hmac.compare_digest(csrf_token, csrf_cookie)
                     ):
                         return JSONResponse(
                             status_code=403,
@@ -234,7 +238,9 @@ def create_app(
     def list_admin_run_timeline(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "timeline", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "timeline", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/nodes")
     def list_admin_run_nodes(
@@ -264,25 +270,33 @@ def create_app(
     def list_admin_run_diagnoses(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "diagnoses", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "diagnoses", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/audit-logs")
     def list_admin_run_audit_logs(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "audit_logs", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "audit_logs", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/approvals")
     def list_admin_run_approvals(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "approvals", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "approvals", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/artifacts")
     def list_admin_run_artifacts(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "artifacts", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "artifacts", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/side-effects")
     def list_admin_run_side_effects(
@@ -296,7 +310,9 @@ def create_app(
     def list_admin_run_evidence(
         run_id: str, cursor: str | None = None, limit: int = 50
     ) -> dict[str, object]:
-        return _observability_collection(application, "evidence", run_id, cursor=cursor, limit=limit)
+        return _observability_collection(
+            application, "evidence", run_id, cursor=cursor, limit=limit
+        )
 
     @application.get("/api/v1/admin/runs/{run_id}/publish-plan")
     def get_admin_run_publish_plan(run_id: str) -> dict[str, object]:

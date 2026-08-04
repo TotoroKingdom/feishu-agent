@@ -1,3 +1,3 @@
-from app.reporting.service import ReportStageOutcome, ReportingService
+from app.reporting.service import ReportingService, ReportStageOutcome
 
 __all__ = ["ReportStageOutcome", "ReportingService"]

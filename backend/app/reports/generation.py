@@ -6,14 +6,14 @@ from typing import Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
+from app.domain.metrics import METRIC_KEYS, METRICS_DEFINITION_VERSION
+from app.domain.source import canonical_json_hash
 from app.llm.policies import (
     sanitize_evidence_item_payload,
     sanitize_member_activity_breakdown,
     sanitize_prompt_identifier,
     sanitize_prompt_text,
 )
-from app.domain.metrics import METRIC_KEYS, METRICS_DEFINITION_VERSION
-from app.domain.source import canonical_json_hash
 
 REPORT_GENERATION_VERSION: Final[str] = "prd.v1"
 REPORT_STATUS_DRAFT: Final[str] = "draft"
@@ -223,7 +223,9 @@ def _build_claim_specs(
 ) -> list[dict[str, object]]:
     period_start_text = _period_text(period_start, evidence_items, "period_start")
     period_end_text = _period_text(period_end, evidence_items, "period_end")
-    feishu_items = [item for item in evidence_items if str(item.get("source_type")) == "feishu_bitable"]
+    feishu_items = [
+        item for item in evidence_items if str(item.get("source_type")) == "feishu_bitable"
+    ]
     github_items = [item for item in evidence_items if str(item.get("source_type")) == "github"]
     github_keys = [str(item["evidence_key"]) for item in github_items]
     feishu_keys = [str(item["evidence_key"]) for item in feishu_items]
@@ -274,7 +276,8 @@ def _build_claim_specs(
         _claim_spec(
             claim_key="github_issue_overdue_count",
             content=(
-                f"Weekly overdue GitHub issues: {metric_values.get('github_issue_overdue_count', 0)}."
+                "Weekly overdue GitHub issues: "
+                f"{metric_values.get('github_issue_overdue_count', 0)}."
             ),
             claim_type=REPORT_CLAIM_TYPE_FACT,
             importance=REPORT_CLAIM_IMPORTANCE_NORMAL,
@@ -298,7 +301,8 @@ def _build_claim_specs(
         _claim_spec(
             claim_key="github_pr_merged_count",
             content=(
-                f"Weekly merged GitHub pull requests: {metric_values.get('github_pr_merged_count', 0)}."
+                "Weekly merged GitHub pull requests: "
+                f"{metric_values.get('github_pr_merged_count', 0)}."
             ),
             claim_type=REPORT_CLAIM_TYPE_FACT,
             importance=REPORT_CLAIM_IMPORTANCE_NORMAL,
@@ -444,7 +448,7 @@ def _build_summary(
 
 
 def _format_member_activity_breakdown(
-    member_activity_breakdown: Sequence[Mapping[str, object]]
+    member_activity_breakdown: Sequence[Mapping[str, object]],
 ) -> str:
     if not member_activity_breakdown:
         return ""

@@ -15,7 +15,6 @@ from app.reports.generation import (
     REPORT_CLAIM_TYPE_FACT,
     REPORT_CLAIM_TYPE_INFERENCE,
     REPORT_CLAIM_TYPE_NEEDS_CONFIRMATION,
-    REPORT_GENERATION_VERSION,
     build_structured_report_hash,
     build_structured_report_payload,
     validate_structured_report_payload,
@@ -153,7 +152,9 @@ def _normalize_payload(
 
     for key, value in raw_payload.items():
         if key == "claims":
-            claims = _normalize_claims(value, canonical_report, allowed_claim_keys, allowed_evidence_keys)
+            claims = _normalize_claims(
+                value, canonical_report, allowed_claim_keys, allowed_evidence_keys
+            )
             if claims is not None:
                 data["claims"] = claims
             continue
@@ -161,7 +162,7 @@ def _normalize_payload(
             data["evidence_keys"] = _normalize_evidence_keys(value, allowed_evidence_keys)
             continue
         if key == "member_activity_breakdown":
-            if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
                 data["member_activity_breakdown"] = sanitize_member_activity_breakdown(
                     [item for item in value if isinstance(item, Mapping)]
                 )
@@ -178,7 +179,16 @@ def _normalize_payload(
         if key == "source_summary":
             data["source_summary"] = _normalize_source_summary(value, canonical_report)
             continue
-        if key in {"schema_version", "period_start", "period_end", "metric_snapshot_ref", "evidence_set_ref", "data_snapshot_hash", "definition_version", "validation_status"}:
+        if key in {
+            "schema_version",
+            "period_start",
+            "period_end",
+            "metric_snapshot_ref",
+            "evidence_set_ref",
+            "data_snapshot_hash",
+            "definition_version",
+            "validation_status",
+        }:
             data[key] = sanitize_prompt_text(value, max_length=128)
             continue
         if key == "structured_hash":
@@ -196,7 +206,7 @@ def _normalize_claims(
     allowed_claim_keys: Sequence[str],
     allowed_evidence_keys: Sequence[str],
 ) -> list[dict[str, object]] | None:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return None
 
     raw_claims = [dict(item) for item in value if isinstance(item, Mapping)]
@@ -211,7 +221,9 @@ def _normalize_claims(
     if any(claim_key not in raw_by_key for claim_key in allowed_claim_keys):
         return None
 
-    canonical_claims = [dict(item) for item in canonical_report.get("claims", []) if isinstance(item, Mapping)]
+    canonical_claims = [
+        dict(item) for item in canonical_report.get("claims", []) if isinstance(item, Mapping)
+    ]
     canonical_by_key = {
         str(item.get("claim_key")): item
         for item in canonical_claims
@@ -228,7 +240,11 @@ def _normalize_claims(
         normalized_claim["claim_key"] = sanitize_prompt_text(claim_key, max_length=128)
         normalized_claim["content"] = sanitize_prompt_text(raw_claim.get("content"), max_length=512)
         claim_type = sanitize_prompt_text(raw_claim.get("claim_type"), max_length=32)
-        if claim_type in {REPORT_CLAIM_TYPE_FACT, REPORT_CLAIM_TYPE_INFERENCE, REPORT_CLAIM_TYPE_NEEDS_CONFIRMATION}:
+        if claim_type in {
+            REPORT_CLAIM_TYPE_FACT,
+            REPORT_CLAIM_TYPE_INFERENCE,
+            REPORT_CLAIM_TYPE_NEEDS_CONFIRMATION,
+        }:
             normalized_claim["claim_type"] = claim_type
         importance = sanitize_prompt_text(raw_claim.get("importance"), max_length=32)
         if importance in {REPORT_CLAIM_IMPORTANCE_CRITICAL, REPORT_CLAIM_IMPORTANCE_NORMAL}:
@@ -239,7 +255,9 @@ def _normalize_claims(
         period_end = sanitize_prompt_text(raw_claim.get("period_end"), max_length=32)
         if period_end:
             normalized_claim["period_end"] = period_end
-        confidence = _normalize_confidence(raw_claim.get("confidence"), normalized_claim.get("confidence"))
+        confidence = _normalize_confidence(
+            raw_claim.get("confidence"), normalized_claim.get("confidence")
+        )
         normalized_claim["confidence"] = confidence
         normalized_claim["evidence_keys"] = _normalize_evidence_keys(
             raw_claim.get("evidence_keys"),
@@ -252,9 +270,7 @@ def _normalize_claims(
 
 def _normalize_metrics(value: object, canonical_report: Mapping[str, object]) -> dict[str, int]:
     canonical_metrics = canonical_report.get("metrics")
-    canonical_metric_map = (
-        dict(canonical_metrics) if isinstance(canonical_metrics, Mapping) else {}
-    )
+    canonical_metric_map = dict(canonical_metrics) if isinstance(canonical_metrics, Mapping) else {}
     if not isinstance(value, Mapping):
         return canonical_metric_map
     metrics: dict[str, int] = {}
@@ -284,7 +300,7 @@ def _normalize_evidence_keys(
     value: object,
     allowed_evidence_keys: Sequence[str],
 ) -> list[str]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return []
     allowed = set(allowed_evidence_keys)
     seen: set[str] = set()
@@ -303,14 +319,14 @@ def _normalize_evidence_keys(
 def _normalize_confidence(value: object, fallback: object) -> float:
     if isinstance(value, bool):
         return float(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return max(0.0, min(1.0, float(value)))
     if isinstance(value, str):
         try:
             return max(0.0, min(1.0, float(value.strip())))
         except ValueError:
             pass
-    if isinstance(fallback, (int, float)):
+    if isinstance(fallback, int | float):
         return max(0.0, min(1.0, float(fallback)))
     return 0.0
 

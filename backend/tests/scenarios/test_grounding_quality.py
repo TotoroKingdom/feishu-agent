@@ -82,11 +82,15 @@ def _validated_report(
         validation_status="complete",
         evidence_items=evidence_items,
         metric_values=_metric_values(include_github=include_github, include_feishu=include_feishu),
-        member_activity_breakdown=_member_activity_breakdown(include_github=include_github, include_feishu=include_feishu),
+        member_activity_breakdown=_member_activity_breakdown(
+            include_github=include_github, include_feishu=include_feishu
+        ),
     )
     validated = validate_structured_report_payload(
         payload,
-        expected_metric_values=_metric_values(include_github=include_github, include_feishu=include_feishu),
+        expected_metric_values=_metric_values(
+            include_github=include_github, include_feishu=include_feishu
+        ),
         allowed_evidence_keys=[item["evidence_key"] for item in evidence_items],
         expected_data_snapshot_hash="data-snapshot-hash",
     )
@@ -151,7 +155,9 @@ def _metric_values(*, include_github: bool, include_feishu: bool) -> dict[str, i
     }
 
 
-def _member_activity_breakdown(*, include_github: bool, include_feishu: bool) -> list[dict[str, object]]:
+def _member_activity_breakdown(
+    *, include_github: bool, include_feishu: bool
+) -> list[dict[str, object]]:
     if include_github and include_feishu:
         return [
             {

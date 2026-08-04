@@ -12,10 +12,10 @@ from app.db.models import (
     CallbackEvent,
     EncryptedCredential,
     LlmExecution,
-    OnboardingSession,
     NodeExecution,
     NormalizedEntity,
     NormalizedSnapshot,
+    OnboardingSession,
     OutboxMessage,
     Project,
     PublishPlan,
@@ -24,7 +24,6 @@ from app.db.models import (
     SideEffectOperation,
     SourceDataBatch,
     ToolExecution,
-    new_id,
 )
 from app.domain.runs import RunCreationService
 from app.runtime.leases import DataLifecycleService

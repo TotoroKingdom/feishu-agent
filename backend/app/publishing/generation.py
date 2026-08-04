@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Any
 
 from app.approvals import canonical_json_hash
 
@@ -86,7 +85,7 @@ def _normalize_report_period(report_period: Mapping[str, object]) -> dict[str, o
 def _coerce_string(value: object, field_name: str) -> str:
     if isinstance(value, str):
         return value
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, date | datetime):
         return value.isoformat()
     if value is None:
         return ""

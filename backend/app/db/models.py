@@ -266,7 +266,9 @@ class ReportRun(Base):
     current_stage: Mapped[str] = mapped_column(String(40), default="created")
     current_node: Mapped[str | None] = mapped_column(String(80), nullable=True)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     approved_publish_plan_id: Mapped[str | None] = mapped_column(
         ForeignKey("publish_plans.id"), nullable=True, index=True
@@ -322,7 +324,9 @@ class AsyncJob(Base):
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_id)
     job_type: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(24))
-    run_id: Mapped[str | None] = mapped_column(ForeignKey("report_runs.id"), nullable=True, index=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("report_runs.id"), nullable=True, index=True
+    )
     requested_by: Mapped[str] = mapped_column(String(128))
     request_hash: Mapped[str] = mapped_column(String(64))
     result_summary: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
@@ -580,9 +584,7 @@ class LlmExecution(Base):
     total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
     duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     error_class: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now()
-    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AuditLog(Base):
@@ -761,7 +763,9 @@ class SideEffectOperation(Base):
     status: Mapped[str] = mapped_column(String(24), default="pending")
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)
     lease_owner: Mapped[str | None] = mapped_column(String(128), nullable=True)
-    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     external_resource_id: Mapped[str | None] = mapped_column(String(256), nullable=True)
     external_url: Mapped[str | None] = mapped_column(String(512), nullable=True)

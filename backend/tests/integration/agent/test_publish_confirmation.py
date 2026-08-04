@@ -94,22 +94,30 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
     assert duplicate.status == "completed"
     assert completed.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert completed.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
-    assert completed.snapshot.values["publish_plan_ref"] == duplicate.snapshot.values["publish_plan_ref"]  # type: ignore[index]
+    assert (
+        completed.snapshot.values["publish_plan_ref"]
+        == duplicate.snapshot.values["publish_plan_ref"]
+    )  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         publish_plan = session.scalar(select(PublishPlan).where(PublishPlan.run_id == run_id))
         approvals = session.scalars(
-            select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.created_at)
+            select(HumanApproval)
+            .where(HumanApproval.run_id == run_id)
+            .order_by(HumanApproval.created_at)
         ).all()
         report_version = session.scalar(select(ReportVersion).where(ReportVersion.run_id == run_id))
         operations = session.scalars(
-            select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(SideEffectOperation.sequence)
+            select(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
         ).all()
         attempts = session.scalars(
-            select(SideEffectAttempt).join(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(
-                SideEffectOperation.sequence, SideEffectAttempt.attempt
-            )
+            select(SideEffectAttempt)
+            .join(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence, SideEffectAttempt.attempt)
         ).all()
         artifacts = session.scalars(
             select(ReportArtifact)
@@ -117,7 +125,9 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
             .where(SideEffectOperation.run_id == run_id)
             .order_by(SideEffectOperation.sequence)
         ).all()
-        tool_executions = session.scalars(select(ToolExecution).where(ToolExecution.run_id == run_id)).all()
+        tool_executions = session.scalars(
+            select(ToolExecution).where(ToolExecution.run_id == run_id)
+        ).all()
 
         assert run_row is not None
         assert run_row.status == "completed"
@@ -131,7 +141,11 @@ def test_publish_confirmation_happy_path_waits_then_completes() -> None:
         assert approvals[1].status == "approved"
         assert len(operations) == 3
         assert [operation.sequence for operation in operations] == [1, 2, 3]
-        assert [operation.status for operation in operations] == ["succeeded", "succeeded", "succeeded"]
+        assert [operation.status for operation in operations] == [
+            "succeeded",
+            "succeeded",
+            "succeeded",
+        ]
         assert len(attempts) == 3
         assert [attempt.status for attempt in attempts] == ["succeeded", "succeeded", "succeeded"]
         assert len(artifacts) == 3
@@ -168,7 +182,9 @@ def test_publish_confirmation_hash_change_reissues_pending_approval() -> None:
     with factory() as session:
         plans = session.scalars(select(PublishPlan).where(PublishPlan.run_id == run_id)).all()
         approvals = session.scalars(
-            select(HumanApproval).where(HumanApproval.run_id == run_id, HumanApproval.approval_type == "publish")
+            select(HumanApproval).where(
+                HumanApproval.run_id == run_id, HumanApproval.approval_type == "publish"
+            )
         ).all()
 
         assert len(plans) == 1

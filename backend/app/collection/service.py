@@ -669,8 +669,9 @@ class CollectionService:
         session.flush()
         return record
 
+
 def _fetch_status(
-    records: Sequence[Mapping[str, object]]
+    records: Sequence[Mapping[str, object]],
 ) -> Literal["complete", "partial", "failed"]:
     if len(records) > MAX_SOURCE_BATCH_RECORDS:
         return "failed"

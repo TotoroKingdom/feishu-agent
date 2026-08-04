@@ -177,7 +177,7 @@ def _coerce_int(value: object) -> int:
 def _coerce_confidence(value: object) -> float:
     if isinstance(value, bool):
         return float(value)
-    if isinstance(value, (int, float)):
+    if isinstance(value, int | float):
         return max(0.0, min(1.0, float(value)))
     if isinstance(value, str):
         try:

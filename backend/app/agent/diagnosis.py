@@ -5,11 +5,10 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.approvals import canonical_json_hash
 from app.agent.policies.problem_registry import ProblemPolicyRegistry, ProblemPolicyResolution
+from app.approvals import canonical_json_hash
 from app.db.models import DiagnosisRecord, ValidationResult, new_id
 
 SessionFactory = Callable[[], Session]
@@ -330,7 +329,9 @@ def _human_input_required_fields(
                 return fields
     summary = _normalize_token(_string_value(observation.get("error_summary")))
     code = _normalize_token(_string_value(observation.get("error_code")))
-    if source_node == "validate_data" and ("github_username" in summary or "member_mapping" in code):
+    if source_node == "validate_data" and (
+        "github_username" in summary or "member_mapping" in code
+    ):
         return [{"name": "github_username", "type": "string", "required": True}]
     return [{"name": "supplement", "type": "string", "required": True}]
 

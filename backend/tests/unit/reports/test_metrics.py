@@ -52,7 +52,9 @@ def test_metric_payload_is_deterministic_for_duplicates_and_ordering() -> None:
 
 
 def test_metric_payload_handles_empty_snapshot() -> None:
-    payload = calculate_metric_payload([], period_start=date(2026, 7, 20), period_end=date(2026, 7, 27))
+    payload = calculate_metric_payload(
+        [], period_start=date(2026, 7, 20), period_end=date(2026, 7, 27)
+    )
 
     assert extract_metric_values(payload) == {
         METRIC_GITHUB_ISSUE_TOTAL_COUNT: 0,

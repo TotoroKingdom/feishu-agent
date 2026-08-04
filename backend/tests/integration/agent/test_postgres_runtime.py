@@ -98,7 +98,9 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
 
             with factory() as session:
                 run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
-                metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
+                metric_row = session.scalar(
+                    select(MetricSnapshot).where(MetricSnapshot.run_id == run_id)
+                )
                 history_rows = session.scalars(
                     select(RunStatusHistory)
                     .where(RunStatusHistory.run_id == run_id)
@@ -109,7 +111,11 @@ def test_postgres_checkpoint_round_trip_and_worker_restart() -> None:
                 assert run_row.status == "completed"
                 assert run_row.current_stage == "succeeded"
                 assert run_row.scope_revision == 1
-                assert [row.to_status for row in history_rows] == ["waiting", "waiting", "completed"]
+                assert [row.to_status for row in history_rows] == [
+                    "waiting",
+                    "waiting",
+                    "completed",
+                ]
                 assert metric_row is not None
         finally:
             saver.delete_thread(thread_id)

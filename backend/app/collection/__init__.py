@@ -1,2 +1,1 @@
 """Deterministic collection orchestration."""
-

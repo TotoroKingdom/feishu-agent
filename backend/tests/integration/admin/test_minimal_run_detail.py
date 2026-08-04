@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi.testclient import TestClient
 from langgraph.checkpoint.memory import MemorySaver
@@ -35,7 +35,11 @@ def _make_client() -> tuple[TestClient, sessionmaker[Session], str, WorkflowRunt
             date(2026, 7, 27),
         )
         session.commit()
-    client = TestClient(create_app(settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory))
+    client = TestClient(
+        create_app(
+            settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory
+        )
+    )
     authenticate_admin(client)
     runtime = WorkflowRuntime(factory, MemorySaver())
     return client, factory, run.id, runtime
@@ -99,8 +103,8 @@ def test_minimal_run_detail_projects_safe_terminal_state() -> None:
                 error_class=None,
                 error_code=None,
                 retryable=False,
-                started_at=datetime.now(timezone.utc),
-                ended_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
+                ended_at=datetime.now(UTC),
                 duration_ms=12,
             )
         )
@@ -126,7 +130,9 @@ def test_minimal_run_detail_projects_safe_terminal_state() -> None:
     assert len(data["artifacts"]) == 3
     assert len(data["side_effects"]) == 3
     assert len(data["tools"]) >= 11
-    custom_tool = next(tool for tool in data["tools"] if tool["node_execution_id"] == "custom-tool-node")
+    custom_tool = next(
+        tool for tool in data["tools"] if tool["node_execution_id"] == "custom-tool-node"
+    )
     assert custom_tool["request_summary"]["token"] == "[REDACTED]"
     assert custom_tool["request_summary"]["password"] == "[REDACTED]"
     assert custom_tool["result_summary"]["api_key"] == "[REDACTED]"
@@ -156,4 +162,3 @@ def test_minimal_run_detail_returns_404_for_missing_run() -> None:
     response = client.get("/api/v1/admin/runs/does-not-exist")
 
     assert response.status_code == 404
-

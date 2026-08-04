@@ -60,4 +60,3 @@ def test_feishu_resource_connectivity_and_field_mappings() -> None:
     connectivity = connectivity_response.json()["data"]
     assert connectivity["resource_id"] == resource["id"]
     assert connectivity["status"] in {"ok", "degraded"}
-

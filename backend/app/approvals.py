@@ -3,8 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Callable, Mapping, Sequence
-from datetime import date, datetime, timezone
-from typing import Any
+from datetime import UTC, date, datetime
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -101,7 +100,9 @@ def merge_scope_override(
         "feishu_resource_refs": _coerce_string_list(
             base_scope.get("feishu_resource_refs"), "feishu_resource_refs"
         ),
-        "user_instructions": _coerce_string(base_scope.get("user_instructions"), "user_instructions"),
+        "user_instructions": _coerce_string(
+            base_scope.get("user_instructions"), "user_instructions"
+        ),
         "expected_publish_group_ref": _coerce_optional_string(
             base_scope.get("expected_publish_group_ref"), "expected_publish_group_ref"
         ),
@@ -233,7 +234,7 @@ class GenerationApprovalStore:
             approval.actor_id = actor_id
             approval.actor_type = "feishu_user"
             approval.decision = normalized_action
-            approval.decided_at = datetime.now(timezone.utc)
+            approval.decided_at = datetime.now(UTC)
             if supplement is not None:
                 approval.supplement = dict(supplement)
 
@@ -363,12 +364,6 @@ class HumanInputApprovalStore:
                 )
             )
 
-    def load_approval_by_challenge(self, challenge_id: str) -> HumanApproval | None:
-        with self._session_factory() as session:
-            return session.scalar(
-                select(HumanApproval).where(HumanApproval.challenge_id == challenge_id)
-            )
-
     def mark_human_input_decision(
         self,
         *,
@@ -390,7 +385,7 @@ class HumanInputApprovalStore:
             approval.actor_id = actor_id
             approval.actor_type = "feishu_user"
             approval.decision = normalized_action
-            approval.decided_at = datetime.now(timezone.utc)
+            approval.decided_at = datetime.now(UTC)
             if supplement is not None:
                 approval.supplement = dict(supplement)
 
@@ -440,7 +435,7 @@ class HumanInputApprovalStore:
             approval.actor_id = actor_id
             approval.actor_type = "feishu_user"
             approval.decision = normalized_action
-            approval.decided_at = datetime.now(timezone.utc)
+            approval.decided_at = datetime.now(UTC)
             if supplement is not None:
                 approval.supplement = dict(supplement)
 
@@ -467,7 +462,7 @@ class HumanInputApprovalStore:
             approval.actor_id = actor_id
             approval.actor_type = "feishu_user"
             approval.decision = APPROVAL_ACTION_REGENERATE_REPORT
-            approval.decided_at = datetime.now(timezone.utc)
+            approval.decided_at = datetime.now(UTC)
             approval.status = "superseded"
             session.commit()
             session.refresh(approval)
@@ -552,9 +547,7 @@ def _validate_github_repository_limit(repository_ids: Sequence[str]) -> None:
         )
 
 
-def _merge_report_period(
-    base_period: Mapping[str, object], override: object
-) -> dict[str, object]:
+def _merge_report_period(base_period: Mapping[str, object], override: object) -> dict[str, object]:
     if not isinstance(override, Mapping):
         raise ValueError("report_period override must be a mapping")
     merged = {
@@ -584,7 +577,7 @@ def _coerce_report_period(value: object) -> dict[str, object]:
 def _coerce_string(value: object, field_name: str) -> str:
     if isinstance(value, str):
         return value
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, date | datetime):
         return value.isoformat()
     if value is None:
         return ""
@@ -600,7 +593,7 @@ def _coerce_optional_string(value: object, field_name: str) -> str | None:
 def _coerce_string_list(value: object, field_name: str) -> list[str]:
     if value is None:
         return []
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         raise ValueError(f"{field_name} must be a list")
     return [_coerce_string(item, field_name) for item in value]
 
@@ -608,22 +601,25 @@ def _coerce_string_list(value: object, field_name: str) -> list[str]:
 def _coerce_list(value: object, field_name: str) -> list[object]:
     if value is None:
         return []
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         raise ValueError(f"{field_name} must be a list")
     return [item for item in value]
 
 
 def _normalize_json_value(value: object) -> object:
     if isinstance(value, Mapping):
-        return {str(key): _normalize_json_value(item) for key, item in sorted(value.items(), key=lambda item: str(item[0]))}
+        return {
+            str(key): _normalize_json_value(item)
+            for key, item in sorted(value.items(), key=lambda item: str(item[0]))
+        }
     if isinstance(value, tuple):
         return [_normalize_json_value(item) for item in value]
     if isinstance(value, list):
         return [_normalize_json_value(item) for item in value]
     if isinstance(value, set):
         return [_normalize_json_value(item) for item in sorted(value, key=repr)]
-    if isinstance(value, (date, datetime)):
+    if isinstance(value, date | datetime):
         return value.isoformat()
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, str | int | float | bool) or value is None:
         return value
     return str(value)

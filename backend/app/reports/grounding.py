@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from typing import Literal
 
-from app.reports.generation import build_claim_evidence_map, build_claim_specs, build_structured_report_hash
+from app.reports.generation import (
+    build_claim_evidence_map,
+    build_claim_specs,
+    build_structured_report_hash,
+)
 
 GROUNDING_VERSION: str = "minimal.v1"
 
@@ -54,7 +58,9 @@ def verify_structured_report_grounding(
         )
 
     evidence_by_key = {
-        str(item.get("evidence_key")): item for item in evidence_item_list if str(item.get("evidence_key"))
+        str(item.get("evidence_key")): item
+        for item in evidence_item_list
+        if str(item.get("evidence_key"))
     }
     if len(evidence_by_key) != len(evidence_item_list):
         return GroundingVerificationResult(
@@ -181,7 +187,9 @@ def _verify_claim(
         )
 
     claim_evidence_keys = _claim_evidence_keys(claim)
-    expected_evidence_keys = [str(value) for value in expected.get("evidence_keys", []) if isinstance(value, str)]
+    expected_evidence_keys = [
+        str(value) for value in expected.get("evidence_keys", []) if isinstance(value, str)
+    ]
     if claim_evidence_keys != expected_evidence_keys:
         return GroundingVerificationResult(
             status="blocked",
@@ -208,7 +216,7 @@ def _verify_claim(
 
 def _claim_evidence_keys(claim: Mapping[str, object]) -> list[str]:
     values = claim.get("evidence_keys", [])
-    if not isinstance(values, Sequence) or isinstance(values, (str, bytes, bytearray)):
+    if not isinstance(values, Sequence) or isinstance(values, str | bytes | bytearray):
         return []
     return [str(value) for value in values if isinstance(value, str) and value]
 
@@ -218,7 +226,9 @@ def _evidence_period_key(item: Mapping[str, object], key: str) -> str:
     if isinstance(value, str):
         return value[:10]
     if isinstance(value, datetime):
-        return value.astimezone(timezone.utc).date().isoformat() if value.tzinfo else value.date().isoformat()
+        return (
+            value.astimezone(UTC).date().isoformat() if value.tzinfo else value.date().isoformat()
+        )
     if isinstance(value, date):
         return value.isoformat()
     return ""
@@ -240,7 +250,7 @@ def _as_metric_values(value: object) -> dict[str, int]:
 
 
 def _as_sequence(value: object) -> Sequence[Mapping[str, object]]:
-    if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+    if isinstance(value, Sequence) and not isinstance(value, str | bytes | bytearray):
         return [dict(item) for item in value if isinstance(item, Mapping)]
     return []
 

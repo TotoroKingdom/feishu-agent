@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from datetime import date
 
@@ -27,7 +26,15 @@ from app.domain.runs import RunCreationService
 from app.main import create_app
 from tests.admin_auth import authenticate_admin
 
-_FORBIDDEN_FRAGMENTS = ("secret", "token", "password", "api_key", "apikey", "credential", "client_secret")
+_FORBIDDEN_FRAGMENTS = (
+    "secret",
+    "token",
+    "password",
+    "api_key",
+    "apikey",
+    "credential",
+    "client_secret",
+)
 
 
 def _make_environment() -> tuple[TestClient, sessionmaker[Session], str, WorkflowRuntime]:
@@ -51,7 +58,9 @@ def _make_environment() -> tuple[TestClient, sessionmaker[Session], str, Workflo
         session.commit()
 
     client = TestClient(
-        create_app(settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory)
+        create_app(
+            settings=Settings(_env_file=None, app_profile="local-demo"), session_factory=factory
+        )
     )
     authenticate_admin(client)
     runtime = WorkflowRuntime(factory, MemorySaver())
@@ -97,7 +106,9 @@ def _assert_secret_free(value: object) -> None:
     if isinstance(value, str):
         lowered = value.casefold()
         for fragment in _FORBIDDEN_FRAGMENTS:
-            assert fragment not in lowered, f"unexpected sensitive fragment {fragment!r} in {value!r}"
+            assert fragment not in lowered, (
+                f"unexpected sensitive fragment {fragment!r} in {value!r}"
+            )
 
 
 def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
@@ -108,7 +119,9 @@ def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
     assert started.snapshot.values["current_stage"] == "waiting_confirmation"  # type: ignore[index]
     assert started.snapshot.values["current_node"] == "wait_generation_confirmation"  # type: ignore[index]
 
-    waiting_publish = runtime.resume(run_id, _generation_payload(started.snapshot, "approve_generation"))
+    waiting_publish = runtime.resume(
+        run_id, _generation_payload(started.snapshot, "approve_generation")
+    )
     assert waiting_publish.status == "waiting"
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
     assert waiting_publish.snapshot.values["current_node"] == "wait_publish_confirmation"  # type: ignore[index]
@@ -117,16 +130,29 @@ def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
     assert waiting_publish.snapshot.values["metrics_ref"]  # type: ignore[index]
     assert waiting_publish.snapshot.values["evidence_set_ref"]  # type: ignore[index]
 
-    completed = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
-    duplicate = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    completed = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
+    duplicate = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
 
     assert completed.status == "completed"
     assert duplicate.status == "completed"
     assert completed.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
     assert completed.snapshot.values["current_node"] == "complete_run"  # type: ignore[index]
-    assert completed.snapshot.values["publish"]["operation_refs"] == duplicate.snapshot.values["publish"]["operation_refs"]  # type: ignore[index]
-    assert completed.snapshot.values["report_version_ref"] == duplicate.snapshot.values["report_version_ref"]  # type: ignore[index]
-    assert completed.snapshot.values["publish_plan_ref"] == duplicate.snapshot.values["publish_plan_ref"]  # type: ignore[index]
+    assert (
+        completed.snapshot.values["publish"]["operation_refs"]
+        == duplicate.snapshot.values["publish"]["operation_refs"]
+    )  # type: ignore[index]
+    assert (
+        completed.snapshot.values["report_version_ref"]
+        == duplicate.snapshot.values["report_version_ref"]
+    )  # type: ignore[index]
+    assert (
+        completed.snapshot.values["publish_plan_ref"]
+        == duplicate.snapshot.values["publish_plan_ref"]
+    )  # type: ignore[index]
 
     response = client.get(f"/api/v1/admin/runs/{run_id}")
     assert response.status_code == 200
@@ -150,11 +176,15 @@ def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
-        approvals = session.scalars(select(HumanApproval).where(HumanApproval.run_id == run_id)).all()
+        approvals = session.scalars(
+            select(HumanApproval).where(HumanApproval.run_id == run_id)
+        ).all()
         report_version = session.scalar(select(ReportVersion).where(ReportVersion.run_id == run_id))
         publish_plan = session.scalar(select(PublishPlan).where(PublishPlan.run_id == run_id))
         operations = session.scalars(
-            select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(SideEffectOperation.sequence)
+            select(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
         ).all()
         artifacts = session.scalars(
             select(ReportArtifact)
@@ -176,8 +206,12 @@ def test_local_demo_happy_path_is_repeatable_and_secret_safe() -> None:
         assert publish_plan is not None
         assert report_version.id == detail["refs"]["report_version_ref"]
         assert publish_plan.id == detail["refs"]["publish_plan_ref"]
-        assert [operation.id for operation in operations] == completed.snapshot.values["publish"]["operation_refs"]  # type: ignore[index]
-        assert [artifact.operation_id for artifact in artifacts] == [operation.id for operation in operations]
+        assert [operation.id for operation in operations] == completed.snapshot.values["publish"][
+            "operation_refs"
+        ]  # type: ignore[index]
+        assert [artifact.operation_id for artifact in artifacts] == [
+            operation.id for operation in operations
+        ]
         assert len(tools) == 10
 
         secret_scan_targets: list[object] = [

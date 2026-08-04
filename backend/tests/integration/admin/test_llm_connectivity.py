@@ -30,4 +30,3 @@ def test_llm_model_config_and_connectivity_job() -> None:
     assert job_response.status_code == 202
     job = job_response.json()["data"]
     assert job["result_summary"]["llm"]["status"] in {"ok", "degraded", "failed"}
-

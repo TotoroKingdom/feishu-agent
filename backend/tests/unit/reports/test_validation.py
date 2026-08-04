@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from app.domain.source import DEFAULT_FEISHU_RESOURCE_ID, DEFAULT_GITHUB_RESOURCE_ID
 from app.reports.normalization import normalize_feishu_records, normalize_github_issue_records
@@ -6,9 +6,9 @@ from app.reports.validation import validate_normalized_entities
 
 
 def test_validation_passes_for_happy_normalized_entities() -> None:
-    fetched_at = datetime(2026, 7, 29, 12, 0, tzinfo=timezone.utc)
-    period_start = datetime(2026, 7, 20, 0, 0, tzinfo=timezone.utc)
-    period_end = datetime(2026, 7, 27, 0, 0, tzinfo=timezone.utc)
+    fetched_at = datetime(2026, 7, 29, 12, 0, tzinfo=UTC)
+    period_start = datetime(2026, 7, 20, 0, 0, tzinfo=UTC)
+    period_end = datetime(2026, 7, 27, 0, 0, tzinfo=UTC)
 
     entities = normalize_feishu_records(
         [
@@ -92,5 +92,7 @@ def test_validation_blocks_failed_or_pr_payloads() -> None:
     assert outcome.validation_pass is False
     assert outcome.data_quality_status == "blocked"
     assert outcome.critical_count >= 1
-    assert any(item.startswith("github:github_issue:state:failed") for item in outcome.missing_items)
+    assert any(
+        item.startswith("github:github_issue:state:failed") for item in outcome.missing_items
+    )
     assert any(item.endswith("pull_request_excluded") for item in outcome.missing_items)

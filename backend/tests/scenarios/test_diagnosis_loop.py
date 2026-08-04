@@ -20,7 +20,7 @@ from app.db.models import (
 )
 from app.domain.runs import RunCreationService
 from app.providers.fake import FakeFeishuProvider, FakeGitHubProvider, FakeScenario
-from app.reporting.service import ReportStageOutcome, ReportingService
+from app.reporting.service import ReportingService, ReportStageOutcome
 
 
 class FlakyGitHubCollectionService(CollectionService):
@@ -194,7 +194,9 @@ def test_single_repo_timeout_is_retried_and_completes() -> None:
     assert len(snapshot.values["diagnosis"]["diagnosis_record_refs"]) == 1  # type: ignore[index]
 
     with factory() as session:
-        records = session.scalars(select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)).all()
+        records = session.scalars(
+            select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)
+        ).all()
         assert len(records) == 1
         assert records[0].planned_action == "retry_current_node"
         run = session.get(ReportRun, run_id)
@@ -215,7 +217,9 @@ def test_non_key_validation_issue_degrades_and_completes() -> None:
     assert result.snapshot.values["diagnosis"]["next_repair_action"] == "degrade_and_continue"  # type: ignore[index]
 
     with factory() as session:
-        records = session.scalars(select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)).all()
+        records = session.scalars(
+            select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)
+        ).all()
         assert len(records) == 1
         assert records[0].planned_action == "degrade_and_continue"
 
@@ -233,10 +237,15 @@ def test_unknown_error_falls_back_to_blocked() -> None:
 
     assert result.status == "blocked"
     assert result.snapshot.values["error_code"] == "TOTALLY_UNKNOWN"  # type: ignore[index]
-    assert result.snapshot.values["diagnosis"]["retry_counters"]["generate_structured_report:unknown"] == 1  # type: ignore[index]
+    assert (
+        result.snapshot.values["diagnosis"]["retry_counters"]["generate_structured_report:unknown"]
+        == 1
+    )  # type: ignore[index]
 
     with factory() as session:
-        records = session.scalars(select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)).all()
+        records = session.scalars(
+            select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)
+        ).all()
         assert len(records) == 1
         assert records[0].planned_action == "abort_run"
 
@@ -253,10 +262,15 @@ def test_retry_budget_stops_after_three_attempts() -> None:
     result = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
 
     assert result.status == "blocked"
-    assert result.snapshot.values["diagnosis"]["retry_counters"]["generate_structured_report:timeout"] == 3  # type: ignore[index]
+    assert (
+        result.snapshot.values["diagnosis"]["retry_counters"]["generate_structured_report:timeout"]
+        == 3
+    )  # type: ignore[index]
     assert len(result.snapshot.values["diagnosis"]["diagnosis_record_refs"]) == 3  # type: ignore[index]
 
     with factory() as session:
-        records = session.scalars(select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)).all()
+        records = session.scalars(
+            select(DiagnosisRecord).where(DiagnosisRecord.run_id == run_id)
+        ).all()
         assert len(records) == 3
         assert records[-1].planned_action == "abort_run"

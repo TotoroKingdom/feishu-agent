@@ -3,10 +3,9 @@ from __future__ import annotations
 from datetime import date
 
 from langgraph.checkpoint.memory import MemorySaver
-from sqlalchemy import select
+from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
-from sqlalchemy import create_engine
 
 from app.agent.runtime import WorkflowRuntime
 from app.db.models import (
@@ -84,8 +83,12 @@ def test_regenerate_report_reuses_inputs_but_creates_new_versions() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    publish_waiting = runtime.resume(run_id, _generation_payload(started.snapshot, "approve_generation"))
-    regenerated = runtime.resume(run_id, _publish_payload(publish_waiting.snapshot, "regenerate_report"))
+    publish_waiting = runtime.resume(
+        run_id, _generation_payload(started.snapshot, "approve_generation")
+    )
+    regenerated = runtime.resume(
+        run_id, _publish_payload(publish_waiting.snapshot, "regenerate_report")
+    )
 
     assert started.status == "waiting"
     assert publish_waiting.status == "waiting"
@@ -93,17 +96,34 @@ def test_regenerate_report_reuses_inputs_but_creates_new_versions() -> None:
     assert regenerated.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
     assert regenerated.snapshot.values["current_node"] == "wait_publish_confirmation"  # type: ignore[index]
     assert regenerated.snapshot.values["approval"]["approval_revision"] == 2  # type: ignore[index]
-    assert regenerated.snapshot.values["metrics_ref"] == publish_waiting.snapshot.values["metrics_ref"]  # type: ignore[index]
-    assert regenerated.snapshot.values["evidence_set_ref"] == publish_waiting.snapshot.values["evidence_set_ref"]  # type: ignore[index]
-    assert regenerated.snapshot.values["report_version_ref"] != publish_waiting.snapshot.values["report_version_ref"]  # type: ignore[index]
-    assert regenerated.snapshot.values["publish_plan_ref"] != publish_waiting.snapshot.values["publish_plan_ref"]  # type: ignore[index]
+    assert (
+        regenerated.snapshot.values["metrics_ref"] == publish_waiting.snapshot.values["metrics_ref"]
+    )  # type: ignore[index]
+    assert (
+        regenerated.snapshot.values["evidence_set_ref"]
+        == publish_waiting.snapshot.values["evidence_set_ref"]
+    )  # type: ignore[index]
+    assert (
+        regenerated.snapshot.values["report_version_ref"]
+        != publish_waiting.snapshot.values["report_version_ref"]
+    )  # type: ignore[index]
+    assert (
+        regenerated.snapshot.values["publish_plan_ref"]
+        != publish_waiting.snapshot.values["publish_plan_ref"]
+    )  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
-        metric_rows = session.scalars(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id)).all()
-        evidence_sets = session.scalars(select(EvidenceSet).where(EvidenceSet.run_id == run_id)).all()
+        metric_rows = session.scalars(
+            select(MetricSnapshot).where(MetricSnapshot.run_id == run_id)
+        ).all()
+        evidence_sets = session.scalars(
+            select(EvidenceSet).where(EvidenceSet.run_id == run_id)
+        ).all()
         report_versions = session.scalars(
-            select(ReportVersion).where(ReportVersion.run_id == run_id).order_by(ReportVersion.version)
+            select(ReportVersion)
+            .where(ReportVersion.run_id == run_id)
+            .order_by(ReportVersion.version)
         ).all()
         publish_plans = session.scalars(
             select(PublishPlan).where(PublishPlan.run_id == run_id).order_by(PublishPlan.version)
@@ -133,7 +153,9 @@ def test_update_supplement_scope_change_returns_to_generation_hitl() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    publish_waiting = runtime.resume(run_id, _generation_payload(started.snapshot, "approve_generation"))
+    publish_waiting = runtime.resume(
+        run_id, _generation_payload(started.snapshot, "approve_generation")
+    )
     scoped = runtime.resume(
         run_id,
         _publish_payload(
@@ -158,7 +180,10 @@ def test_update_supplement_scope_change_returns_to_generation_hitl() -> None:
     assert scoped.snapshot.values["approval"]["approval_revision"] == 2  # type: ignore[index]
     assert scoped.snapshot.values["publish_plan_ref"] is None  # type: ignore[index]
     assert scoped.snapshot.values["metrics_ref"] == publish_waiting.snapshot.values["metrics_ref"]  # type: ignore[index]
-    assert scoped.snapshot.values["evidence_set_ref"] == publish_waiting.snapshot.values["evidence_set_ref"]  # type: ignore[index]
+    assert (
+        scoped.snapshot.values["evidence_set_ref"]
+        == publish_waiting.snapshot.values["evidence_set_ref"]
+    )  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))

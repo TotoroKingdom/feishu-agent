@@ -238,7 +238,9 @@ class AdminAuthService:
     def auth_cookie_present(self, request: Request) -> bool:
         return ACCESS_COOKIE_NAME in request.cookies or REFRESH_COOKIE_NAME in request.cookies
 
-    def _create_session(self, session: Session, user: AdminUser, request: Request) -> AdminAuthResult:
+    def _create_session(
+        self, session: Session, user: AdminUser, request: Request
+    ) -> AdminAuthResult:
         issued_at = datetime.now(UTC)
         expires_at = issued_at + timedelta(days=self._settings.admin_session_days)
         refresh_token = secrets.token_urlsafe(48)
@@ -278,7 +280,9 @@ class AdminAuthService:
             user = AdminUser(
                 id=new_id(),
                 username=self._settings.admin_username,
-                password_hash=_hash_password(self._settings.admin_initial_password.get_secret_value()),
+                password_hash=_hash_password(
+                    self._settings.admin_initial_password.get_secret_value()
+                ),
                 status="active",
                 failed_login_count=0,
                 locked_until=None,
@@ -397,7 +401,9 @@ def _encode_access_token(
     *, session_id: str, issued_at: datetime, expires_at: datetime, secret: str
 ) -> str:
     payload = f"{session_id}.{int(issued_at.timestamp())}.{int(expires_at.timestamp())}"
-    signature = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
+    signature = hmac.new(
+        secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
     return f"{payload}.{signature}"
 
 

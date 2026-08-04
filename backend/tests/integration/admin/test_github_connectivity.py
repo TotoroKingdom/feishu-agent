@@ -19,11 +19,12 @@ def test_github_repository_connectivity_test_returns_status_snapshot() -> None:
     )
     repository = repository_response.json()["data"]
 
-    response = client.post(f"/api/v1/admin/project/repositories/{repository['id']}/connectivity-test")
+    response = client.post(
+        f"/api/v1/admin/project/repositories/{repository['id']}/connectivity-test"
+    )
 
     assert response.status_code == 200
     data = response.json()["data"]
     assert data["repository_id"] == repository["id"]
     assert data["status"] in {"ok", "degraded"}
     assert "capabilities" in data
-

@@ -1,2 +1,1 @@
 """Deterministic report building helpers."""
-

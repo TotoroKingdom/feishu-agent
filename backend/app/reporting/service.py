@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from typing import Literal
 
 from sqlalchemy import func, select
@@ -22,7 +22,6 @@ from app.db.models import (
     ValidationResult,
     new_id,
 )
-from app.domain.metrics import METRICS_DEFINITION_VERSION
 from app.domain.source import SOURCE_TYPE_FEISHU_BITABLE, SOURCE_TYPE_GITHUB, canonical_json_hash
 from app.llm.policies import sanitize_evidence_item_payload
 from app.reports.generation import (
@@ -34,9 +33,12 @@ from app.reports.generation import (
     build_structured_report_payload,
     validate_structured_report_payload,
 )
-from app.reports.grounding import GROUNDING_VERSION, GroundingVerificationResult, verify_structured_report_grounding
-from app.reports.rendering import RENDERING_VERSION, render_verified_report
+from app.reports.grounding import (
+    GROUNDING_VERSION,
+    verify_structured_report_grounding,
+)
 from app.reports.metrics import extract_metric_values
+from app.reports.rendering import RENDERING_VERSION, render_verified_report
 
 SessionFactory = Callable[[], Session]
 
@@ -65,7 +67,9 @@ class ReportingService:
                     error_code="METRIC_SNAPSHOT_MISSING",
                     error_summary="Metric snapshot not found",
                 )
-            normalized_snapshot = session.get(NormalizedSnapshot, metric_snapshot.normalized_snapshot_id)
+            normalized_snapshot = session.get(
+                NormalizedSnapshot, metric_snapshot.normalized_snapshot_id
+            )
             if normalized_snapshot is None:
                 return ReportStageOutcome(
                     status="blocked",
@@ -73,9 +77,9 @@ class ReportingService:
                     error_summary="Normalized snapshot not found",
                 )
             entities = session.scalars(
-                select(NormalizedEntity).where(
-                    NormalizedEntity.normalized_snapshot_id == normalized_snapshot.id
-                ).order_by(NormalizedEntity.source_type, NormalizedEntity.external_id)
+                select(NormalizedEntity)
+                .where(NormalizedEntity.normalized_snapshot_id == normalized_snapshot.id)
+                .order_by(NormalizedEntity.source_type, NormalizedEntity.external_id)
             ).all()
             if not entities:
                 return ReportStageOutcome(
@@ -170,7 +174,9 @@ class ReportingService:
                     error_summary="Evidence set not found",
                 )
             metric_snapshot = session.get(MetricSnapshot, evidence_set.metric_snapshot_id)
-            normalized_snapshot = session.get(NormalizedSnapshot, evidence_set.normalized_snapshot_id)
+            normalized_snapshot = session.get(
+                NormalizedSnapshot, evidence_set.normalized_snapshot_id
+            )
             if metric_snapshot is None or normalized_snapshot is None:
                 return ReportStageOutcome(
                     status="blocked",
@@ -221,7 +227,9 @@ class ReportingService:
             validated_report = validate_structured_report_payload(
                 structured_report,
                 expected_metric_values=metric_values,
-                allowed_evidence_keys=[str(item["evidence_key"]) for item in evidence_item_payloads],
+                allowed_evidence_keys=[
+                    str(item["evidence_key"]) for item in evidence_item_payloads
+                ],
                 expected_data_snapshot_hash=data_snapshot_hash,
             )
             structured_hash = build_structured_report_hash(validated_report)
@@ -271,9 +279,7 @@ class ReportingService:
                         "model": "report-generator.minimal.v1",
                         "generation_version": REPORT_GENERATION_VERSION,
                     },
-                    confidence=1.0
-                    if validation_result.validation_pass
-                    else 0.9,
+                    confidence=1.0 if validation_result.validation_pass else 0.9,
                     data_quality_status=validation_result.data_quality_status,
                     verified_at=None,
                 )
@@ -320,15 +326,15 @@ class ReportingService:
                 node_execution_id="generate_structured_report",
                 tool_name="reports.generate_structured_report",
                 request_summary={"evidence_set_id": evidence_set_id},
-                    result_summary={
-                        "content_hash": content_hash,
-                        "claim_count": len(validated_report["claims"]),
-                        "report_version": report_version.version,
-                    },
-                    data_ref=report_version.id,
-                    status="success",
-                    retryable=False,
-                )
+                result_summary={
+                    "content_hash": content_hash,
+                    "claim_count": len(validated_report["claims"]),
+                    "report_version": report_version.version,
+                },
+                data_ref=report_version.id,
+                status="success",
+                retryable=False,
+            )
             session.commit()
             return ReportStageOutcome(status="complete", report_version_ref=report_version.id)
 
@@ -380,7 +386,9 @@ class ReportingService:
                 )
 
             metric_snapshot = session.get(MetricSnapshot, evidence_set.metric_snapshot_id)
-            normalized_snapshot = session.get(NormalizedSnapshot, evidence_set.normalized_snapshot_id)
+            normalized_snapshot = session.get(
+                NormalizedSnapshot, evidence_set.normalized_snapshot_id
+            )
             if metric_snapshot is None or normalized_snapshot is None:
                 return ReportStageOutcome(
                     status="blocked",
@@ -416,7 +424,10 @@ class ReportingService:
                     "evidence_set_content_hash": evidence_set.content_hash,
                 }
             )
-            if _maybe_string(structured_report.get("data_snapshot_hash")) != expected_data_snapshot_hash:
+            if (
+                _maybe_string(structured_report.get("data_snapshot_hash"))
+                != expected_data_snapshot_hash
+            ):
                 return ReportStageOutcome(
                     status="blocked",
                     error_code="DATA_SNAPSHOT_HASH_MISMATCH",
@@ -474,7 +485,7 @@ class ReportingService:
             for claim in claims:
                 claim.grounding_status = claim_statuses.get(claim.claim_key, "verified")
             report_version.status = "verified"
-            report_version.verified_at = report_version.verified_at or datetime.now(timezone.utc)
+            report_version.verified_at = report_version.verified_at or datetime.now(UTC)
             report_version.model_info = {
                 **dict(report_version.model_info or {}),
                 "grounding_version": GROUNDING_VERSION,
@@ -498,7 +509,7 @@ class ReportingService:
 
     def render_report(self, run_id: str, report_version_id: str) -> ReportStageOutcome:
         with self._session_factory() as session:
-            run = self._load_run(session, run_id)
+            self._load_run(session, run_id)
             report_version = session.get(ReportVersion, report_version_id)
             if report_version is None:
                 return ReportStageOutcome(
@@ -528,7 +539,9 @@ class ReportingService:
                     report_version_ref=report_version.id,
                 )
 
-            evidence_set_id = _maybe_string(report_version.structured_report.get("evidence_set_ref"))
+            evidence_set_id = _maybe_string(
+                report_version.structured_report.get("evidence_set_ref")
+            )
             if evidence_set_id is None:
                 return ReportStageOutcome(
                     status="blocked",
@@ -564,9 +577,12 @@ class ReportingService:
                     error_summary="Evidence items not found",
                     report_version_ref=report_version.id,
                 )
-            if any(claim.grounding_status != "verified" for claim in session.scalars(
-                select(ReportClaim).where(ReportClaim.report_version_id == report_version.id)
-            ).all()):
+            if any(
+                claim.grounding_status != "verified"
+                for claim in session.scalars(
+                    select(ReportClaim).where(ReportClaim.report_version_id == report_version.id)
+                ).all()
+            ):
                 return ReportStageOutcome(
                     status="blocked",
                     error_code="REPORT_NOT_GROUNDED",
@@ -648,7 +664,7 @@ class ReportingService:
         )
         if existing is not None:
             return existing
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         record = ToolExecution(
             id=new_id(),
             run_id=run_id,
@@ -717,19 +733,19 @@ def _build_evidence_item_payload(
 def _evidence_item_to_payload(item: EvidenceItem) -> dict[str, object]:
     return sanitize_evidence_item_payload(
         {
-        "evidence_key": item.evidence_key,
-        "source_type": item.source_type,
-        "source_resource_id": item.source_resource_id,
-        "external_id": item.external_id,
-        "url": item.url,
-        "period_start": item.period_start,
-        "period_end": item.period_end,
-        "evidence_summary": item.evidence_summary,
-        "confidence": item.confidence,
-        "normalized_entity_id": item.normalized_entity_id,
-        "content_hash": item.content_hash,
-        "state": None,
-        "is_overdue": False,
+            "evidence_key": item.evidence_key,
+            "source_type": item.source_type,
+            "source_resource_id": item.source_resource_id,
+            "external_id": item.external_id,
+            "url": item.url,
+            "period_start": item.period_start,
+            "period_end": item.period_end,
+            "evidence_summary": item.evidence_summary,
+            "confidence": item.confidence,
+            "normalized_entity_id": item.normalized_entity_id,
+            "content_hash": item.content_hash,
+            "state": None,
+            "is_overdue": False,
         }
     )
 
@@ -748,7 +764,7 @@ def _member_activity_breakdown(value: object) -> list[dict[str, object]]:
     if not isinstance(value, Mapping):
         return []
     breakdown = value.get("member_activity_breakdown")
-    if not isinstance(breakdown, Sequence) or isinstance(breakdown, (str, bytes, bytearray)):
+    if not isinstance(breakdown, Sequence) or isinstance(breakdown, str | bytes | bytearray):
         return []
     return [dict(item) for item in breakdown if isinstance(item, Mapping)]
 
@@ -762,14 +778,12 @@ def _is_overdue_entity(entity: NormalizedEntity, period_end: datetime) -> bool:
     if updated_at is None:
         return False
     updated_at_utc = (
-        updated_at.astimezone(timezone.utc)
-        if updated_at.tzinfo
-        else updated_at.replace(tzinfo=timezone.utc)
+        updated_at.astimezone(UTC) if updated_at.tzinfo else updated_at.replace(tzinfo=UTC)
     )
     period_end_utc = (
-        period_end.astimezone(timezone.utc)
+        period_end.astimezone(UTC)
         if isinstance(period_end, datetime) and period_end.tzinfo
-        else datetime(period_end.year, period_end.month, period_end.day, tzinfo=timezone.utc)
+        else datetime(period_end.year, period_end.month, period_end.day, tzinfo=UTC)
     )
     return updated_at_utc < period_end_utc - timedelta(days=7)
 
@@ -783,4 +797,4 @@ def _maybe_string(value: object) -> str | None:
 
 
 def _date_to_utc(value: date) -> datetime:
-    return datetime(value.year, value.month, value.day, tzinfo=timezone.utc)
+    return datetime(value.year, value.month, value.day, tzinfo=UTC)

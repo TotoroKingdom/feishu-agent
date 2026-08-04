@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -141,7 +141,9 @@ class RunDetailService:
             refs = self._load_refs(session, run, approvals, artifacts, side_effects)
             timestamps = self._build_timestamps(session, run_id)
             approval_status, approval_revision = self._build_approval_status(approvals)
-            error_code, error_summary = self._build_error_summary(session, run_id, run, tools, side_effects)
+            error_code, error_summary = self._build_error_summary(
+                session, run_id, run, tools, side_effects
+            )
             requester_id = self._build_requester_id(approvals, run.thread_id)
 
             detail = RunDetailView(
@@ -173,7 +175,9 @@ class RunDetailService:
 
     def _load_approvals(self, session: Session, run_id: str) -> list[RunApprovalSummary]:
         rows = session.scalars(
-            select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(HumanApproval.created_at)
+            select(HumanApproval)
+            .where(HumanApproval.run_id == run_id)
+            .order_by(HumanApproval.created_at)
         ).all()
         approvals: list[RunApprovalSummary] = []
         for row in rows:
@@ -196,9 +200,9 @@ class RunDetailService:
 
     def _load_tools(self, session: Session, run_id: str) -> list[RunToolSummary]:
         rows = session.scalars(
-            select(ToolExecution).where(ToolExecution.run_id == run_id).order_by(
-                ToolExecution.started_at, ToolExecution.attempt
-            )
+            select(ToolExecution)
+            .where(ToolExecution.run_id == run_id)
+            .order_by(ToolExecution.started_at, ToolExecution.attempt)
         ).all()
         tools: list[RunToolSummary] = []
         for row in rows:
@@ -221,7 +225,9 @@ class RunDetailService:
 
     def _load_artifacts(self, session: Session, run_id: str) -> list[RunArtifactSummary]:
         rows = session.scalars(
-            select(ReportArtifact).where(ReportArtifact.run_id == run_id).order_by(ReportArtifact.created_at)
+            select(ReportArtifact)
+            .where(ReportArtifact.run_id == run_id)
+            .order_by(ReportArtifact.created_at)
         ).all()
         artifacts: list[RunArtifactSummary] = []
         for row in rows:
@@ -239,9 +245,9 @@ class RunDetailService:
 
     def _load_side_effects(self, session: Session, run_id: str) -> list[RunSideEffectSummary]:
         rows = session.scalars(
-            select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(
-                SideEffectOperation.sequence
-            )
+            select(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
         ).all()
         side_effects: list[RunSideEffectSummary] = []
         for row in rows:
@@ -270,7 +276,9 @@ class RunDetailService:
         side_effects: Sequence[RunSideEffectSummary],
     ) -> RunRefs:
         report_version = session.scalar(
-            select(ReportVersion).where(ReportVersion.run_id == run.id).order_by(ReportVersion.created_at.desc())
+            select(ReportVersion)
+            .where(ReportVersion.run_id == run.id)
+            .order_by(ReportVersion.created_at.desc())
         )
         publish_plan = (
             session.get(PublishPlan, run.approved_publish_plan_id)
@@ -279,7 +287,9 @@ class RunDetailService:
         )
         if publish_plan is None:
             publish_plan = session.scalar(
-                select(PublishPlan).where(PublishPlan.run_id == run.id).order_by(PublishPlan.created_at.desc())
+                select(PublishPlan)
+                .where(PublishPlan.run_id == run.id)
+                .order_by(PublishPlan.created_at.desc())
             )
         approved_publish_plan_ref = publish_plan.id if publish_plan is not None else None
         artifact_refs = [artifact.external_id or artifact.operation_id for artifact in artifacts]
@@ -297,7 +307,9 @@ class RunDetailService:
         if run is None:
             raise RunDetailNotFoundError(f"run not found: {run_id}")
         latest_activity_at = session.scalar(_latest_activity_query(run_id))
-        completed_at = latest_activity_at if self._is_terminal(run.status, run.current_stage) else None
+        completed_at = (
+            latest_activity_at if self._is_terminal(run.status, run.current_stage) else None
+        )
         return RunTimestampSummary(
             created_at=run.created_at,
             latest_activity_at=latest_activity_at,
@@ -321,7 +333,9 @@ class RunDetailService:
         failed_tool = next((tool for tool in reversed(tools) if tool.status == "failed"), None)
         if failed_tool is not None:
             return failed_tool.error_code, failed_tool.error_class or failed_tool.error_code
-        failed_side_effect = next((item for item in reversed(side_effects) if item.status == "failed"), None)
+        failed_side_effect = next(
+            (item for item in reversed(side_effects) if item.status == "failed"), None
+        )
         if failed_side_effect is not None:
             return failed_side_effect.last_error_class, failed_side_effect.last_error_summary
         if run.status == "blocked":

@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
-
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker

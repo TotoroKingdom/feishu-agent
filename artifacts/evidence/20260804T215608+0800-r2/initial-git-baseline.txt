@@ -1,0 +1,16 @@
+>>> git branch --show-current
+dev
+__EXIT__=0
+>>> git rev-parse --short=12 HEAD
+042bf19dd2b3
+__EXIT__=0
+>>> git status --short --untracked-files=all
+?? artifacts/evidence/20260804T215608+0800-r2/initial-format.txt
+?? artifacts/evidence/20260804T215608+0800-r2/initial-mypy.txt
+?? artifacts/evidence/20260804T215608+0800-r2/initial-ruff.txt
+__EXIT__=0
+>>> git diff --stat
+__EXIT__=0
+>>> git diff --check
+__EXIT__=0
+

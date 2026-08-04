@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 
 from app.db.models import AuditLog, LlmExecution, NodeExecution, ToolExecution, new_id
 from app.domain.runs import RunCreationService
@@ -17,7 +17,7 @@ def _make_observability_run() -> tuple[object, object, str]:
             date(2026, 7, 20),
             date(2026, 7, 27),
         )
-        node_started_at = datetime(2026, 7, 30, 10, 0, tzinfo=timezone.utc)
+        node_started_at = datetime(2026, 7, 30, 10, 0, tzinfo=UTC)
         node = NodeExecution(
             id=new_id(),
             run_id=run.id,

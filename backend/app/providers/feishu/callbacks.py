@@ -9,14 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.approvals import (
     APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
-    GENERATION_APPROVAL_TYPE,
     HUMAN_INPUT_APPROVAL_TYPE,
     GenerationApprovalStore,
     PublishApprovalStore,
 )
 from app.core.config import Settings
-from app.messaging.ledger import CallbackEventConflictError, CallbackInboxStore
 from app.db.models import HumanApproval
+from app.messaging.ledger import CallbackEventConflictError, CallbackInboxStore
 from app.providers.feishu.auth import (
     FeishuAuthError,
     FeishuIdentityResolver,
@@ -246,23 +245,23 @@ class FeishuCallbackService:
             value = payload[name]
             if field_type == "string" and (not isinstance(value, str) or not value.strip()):
                 raise FeishuCallbackValidationError(f"supplement.{name} must be a non-empty string")
-            if field_type == "number" and (not isinstance(value, (int, float)) or isinstance(value, bool)):
+            if field_type == "number" and (
+                not isinstance(value, int | float) or isinstance(value, bool)
+            ):
                 raise FeishuCallbackValidationError(f"supplement.{name} must be a number")
             if field_type == "boolean" and not isinstance(value, bool):
                 raise FeishuCallbackValidationError(f"supplement.{name} must be a boolean")
             if field_type == "object" and not isinstance(value, Mapping):
                 raise FeishuCallbackValidationError(f"supplement.{name} must be a mapping")
             if field_type == "array" and (
-                not isinstance(value, list) or isinstance(value, (str, bytes, bytearray))
+                not isinstance(value, list) or isinstance(value, str | bytes | bytearray)
             ):
                 raise FeishuCallbackValidationError(f"supplement.{name} must be a list")
 
     def _validate_time_window(self, occurred_at: datetime) -> None:
         now = self._now_factory()
         candidate = (
-            occurred_at
-            if occurred_at.tzinfo is not None
-            else occurred_at.replace(tzinfo=UTC)
+            occurred_at if occurred_at.tzinfo is not None else occurred_at.replace(tzinfo=UTC)
         )
         delta = abs(now - candidate.astimezone(UTC))
         if delta > self._max_skew:

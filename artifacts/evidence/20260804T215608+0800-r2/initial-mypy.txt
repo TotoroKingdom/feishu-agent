@@ -1,0 +1,294 @@
+
+app\agent\policies\problem_registry.py:53: error: Unsupported operand types for >= ("int" and "object")  [operator]
+app\agent\policies\problem_registry.py:57: error: Argument "severity" to "ProblemPolicyResolution" has incompatible typ
+e "object"; expected "str"  [arg-type]
+app\agent\policies\problem_registry.py:58: error: Argument "recoverability" to "ProblemPolicyResolution" has incompatib
+le type "object"; expected "Literal['retryable', 'degradable', 'human', 'fatal']"  [arg-type]
+app\agent\policies\problem_registry.py:62: error: Argument "max_attempts" to "ProblemPolicyResolution" has incompatible
+ type "object"; expected "int"  [arg-type]
+app\agent\policies\problem_registry.py:71: error: Argument "severity" to "ProblemPolicyResolution" has incompatible typ
+e "object"; expected "str"  [arg-type]
+app\agent\policies\problem_registry.py:72: error: Argument "recoverability" to "ProblemPolicyResolution" has incompatib
+le type "object"; expected "Literal['retryable', 'degradable', 'human', 'fatal']"  [arg-type]
+app\agent\policies\problem_registry.py:73: error: Argument "planned_action" to "ProblemPolicyResolution" has incompatib
+le type "object"; expected "Literal['retry_current_node', 'repair_and_retry', 'degrade_and_continue', 'request_human_in
+put', 'abort_run']"  [arg-type]
+app\agent\policies\problem_registry.py:74: error: Argument "next_node" to "ProblemPolicyResolution" has incompatible ty
+pe "object"; expected "str | None"  [arg-type]
+app\agent\policies\problem_registry.py:75: error: Argument "exit_route" to "ProblemPolicyResolution" has incompatible t
+ype "object"; expected "Literal['retry', 'continue', 'blocked']"  [arg-type]
+app\agent\policies\problem_registry.py:76: error: Argument "max_attempts" to "ProblemPolicyResolution" has incompatible
+ type "object"; expected "int"  [arg-type]
+app\agent\policies\problem_registry.py:77: error: Argument "allowed_actions" to "ProblemPolicyResolution" has incompati
+ble type "object"; expected "tuple[Literal['retry_current_node', 'repair_and_retry', 'degrade_and_continue', 'request_h
+uman_input', 'abort_run'], ...]"  [arg-type]
+app\agent\policies\problem_registry.py:78: error: Argument "retryable" to "ProblemPolicyResolution" has incompatible ty
+pe "object"; expected "bool"  [arg-type]
+app\reports\validation.py:79: error: Argument "data_quality_status" to "ValidationOutcome" has incompatible type "str";
+ expected "Literal['complete', 'partial', 'blocked']"  [arg-type]
+app\reports\normalization.py:316: error: Argument 1 to "_within_period" has incompatible type "object"; expected "datet
+ime | None"  [arg-type]
+app\providers\feishu\bitable.py:398: error: Incompatible return value type (got "list[str | None]", expected "str | lis
+t[str] | None")  [return-value]
+app\reports\generation.py:169: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable
+)  [attr-defined]
+app\providers\github\client.py:224: error: Incompatible types in assignment (expression has type "str | None", variable
+ has type "str")  [assignment]
+app\reports\grounding.py:184: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)
+  [attr-defined]
+app\llm\schema_repair.py:61: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable) 
+ [attr-defined]
+app\llm\schema_repair.py:214: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)
+  [attr-defined]
+app\approvals.py:115: error: Argument 1 to "_merge_report_period" has incompatible type "list[object] | Collection[str]
+ | None"; expected "Mapping[str, object]"  [arg-type]
+app\approvals.py:118: error: Unsupported target for indexed assignment ("list[object] | Collection[str] | None")  [inde
+x]
+app\approvals.py:118: error: No overload variant of "__setitem__" of "list" matches argument types "str", "str"  [call-
+overload]
+app\approvals.py:122: error: Unsupported target for indexed assignment ("list[object] | Collection[str] | None")  [inde
+x]
+app\approvals.py:122: error: No overload variant of "__setitem__" of "list" matches argument types "str", "str"  [call-
+overload]
+app\approvals.py:124: error: Unsupported target for indexed assignment ("list[object] | Collection[str] | None")  [inde
+x]
+app\approvals.py:124: error: No overload variant of "__setitem__" of "list" matches argument types "str", "str"  [call-
+overload]
+app\approvals.py:129: error: Argument 1 to "_validate_github_repository_limit" has incompatible type "list[object] | Co
+llection[str] | None"; expected "Sequence[str]"  [arg-type]
+app\approvals.py:145: error: Incompatible return value type (got "dict[str, list[object] | Collection[str] | None]", ex
+pected "dict[str, object]")  [return-value]
+app\approvals.py:416: error: Name "load_approval_by_challenge" already defined on line 366  [no-redef]
+app\approvals.py:571: error: Incompatible return value type (got "dict[str, str]", expected "dict[str, object]")  [retu
+rn-value]
+app\runtime\leases.py:527: error: "Sequence[AsyncJob]" has no attribute "extend"  [attr-defined]
+app\runtime\leases.py:618: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+app\runtime\leases.py:625: error: Need type annotation for "rows"  [var-annotated]
+app\runtime\leases.py:627: error: "type" has no attribute "id"  [attr-defined]
+app\reporting\service.py:132: error: Argument 1 to "float" has incompatible type "object"; expected "str | Buffer | Sup
+portsFloat | SupportsIndex"  [arg-type]
+app\reporting\service.py:282: error: "object" has no attribute "__iter__"; maybe "__dir__" or "__str__"? (not iterable)
+  [attr-defined]
+app\reporting\service.py:325: error: Argument 1 to "len" has incompatible type "object"; expected "Sized"  [arg-type]
+app\reporting\service.py:683: error: Argument 2 to "_is_overdue_entity" has incompatible type "date"; expected "datetim
+e"  [arg-type]
+app\observability\query.py:207: error: Incompatible types in assignment (expression has type "NodeExecution", variable 
+has type "RunStatusHistory")  [assignment]
+app\observability\query.py:216: error: "RunStatusHistory" has no attribute "started_at"  [attr-defined]
+app\observability\query.py:217: error: Argument 1 to "_node_row" of "RunObservabilityQueryService" has incompatible typ
+e "RunStatusHistory"; expected "NodeExecution"  [arg-type]
+app\observability\query.py:220: error: Incompatible types in assignment (expression has type "ToolExecution", variable 
+has type "RunStatusHistory")  [assignment]
+app\observability\query.py:229: error: "RunStatusHistory" has no attribute "started_at"  [attr-defined]
+app\observability\query.py:230: error: Argument 1 to "_tool_row" of "RunObservabilityQueryService" has incompatible typ
+e "RunStatusHistory"; expected "ToolExecution"  [arg-type]
+app\observability\query.py:233: error: Incompatible types in assignment (expression has type "LlmExecution", variable h
+as type "RunStatusHistory")  [assignment]
+app\observability\query.py:243: error: Argument 1 to "_llm_row" of "RunObservabilityQueryService" has incompatible type
+ "RunStatusHistory"; expected "LlmExecution"  [arg-type]
+app\observability\query.py:246: error: Incompatible types in assignment (expression has type "DiagnosisRecord", variabl
+e has type "RunStatusHistory")  [assignment]
+app\observability\query.py:256: error: Argument 1 to "_diagnosis_row" of "RunObservabilityQueryService" has incompatibl
+e type "RunStatusHistory"; expected "DiagnosisRecord"  [arg-type]
+app\observability\query.py:259: error: Incompatible types in assignment (expression has type "AuditLog", variable has t
+ype "RunStatusHistory")  [assignment]
+app\observability\query.py:268: error: "RunStatusHistory" has no attribute "occurred_at"  [attr-defined]
+app\observability\query.py:269: error: Argument 1 to "_audit_row" of "RunObservabilityQueryService" has incompatible ty
+pe "RunStatusHistory"; expected "AuditLog"  [arg-type]
+app\observability\query.py:495: error: Argument 1 to "int" has incompatible type "str | None"; expected "str | Buffer |
+ SupportsInt | SupportsIndex | SupportsTrunc"  [arg-type]
+app\metrics\service.py:85: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\admin\run_detail.py:352: error: Incompatible return value type (got "Select[tuple[datetime]]", expected "Select[tup
+le[datetime | None]]")  [return-value]
+app\admin\run_detail.py:359: error: Returning Any from function declared to return "dict[str, Any]"  [no-any-return]
+app\admin\configuration.py:503: error: Incompatible types in assignment (expression has type "object", variable has typ
+e "SQLCoreOperations[dict[str, object]] | dict[str, object]")  [assignment]
+app\providers\github\resources.py:131: error: Argument "fetch_status" to "GitHubRepositoryCoreData" has incompatible ty
+pe "str"; expected "Literal['complete', 'partial', 'failed']"  [arg-type]
+app\providers\github\resources.py:181: error: Unsupported target for indexed assignment ("Mapping[str, object]")  [inde
+x]
+app\providers\github\resources.py:182: error: Unsupported target for indexed assignment ("Mapping[str, object]")  [inde
+x]
+app\providers\feishu\resume.py:74: error: Unused "type: ignore" comment  [unused-ignore]
+app\providers\feishu\resume.py:74: error: No overload variant of "dict" matches argument type "object"  [call-overload]
+app\providers\feishu\resume.py:79: error: Unused "type: ignore" comment  [unused-ignore]
+app\providers\feishu\resume.py:79: error: No overload variant of "dict" matches argument type "object"  [call-overload]
+app\providers\feishu\cards.py:53: error: Redundant cast to "Literal['create', 'update']"  [redundant-cast]
+app\providers\feishu\cards.py:54: error: Argument "content" to "FeishuCardMessageDraft" has incompatible type "dict[str
+, Collection[str]]"; expected "dict[str, object]"  [arg-type]
+app\agent\diagnosis.py:53: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\diagnosis.py:95: error: Argument 1 to "update" of "MutableMapping" has incompatible type "dict[str, object]";
+ expected "SupportsKeysAndGetItem[str, Collection[str] | None]"  [arg-type]
+app\agent\diagnosis.py:112: error: Argument "diagnosis_patch" to "DiagnosisOutcome" has incompatible type "dict[str, Co
+llection[str] | None]"; expected "dict[str, object]"  [arg-type]
+app\agent\diagnosis.py:128: error: Argument "diagnosis_patch" to "DiagnosisOutcome" has incompatible type "dict[str, Co
+llection[str] | None]"; expected "dict[str, object]"  [arg-type]
+app\providers\fake.py:26: error: Argument "fetch_status" to "FeishuBitableReadPage" has incompatible type "str"; expect
+ed "Literal['complete', 'partial', 'failed']"  [arg-type]
+app\admin\onboarding.py:173: error: No overload variant of "dict" matches argument type "object"  [call-overload]
+app\admin\onboarding.py:276: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\admin\onboarding.py:289: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\admin\onboarding.py:298: error: Incompatible types in assignment (expression has type "FeishuResource | None", vari
+able has type "ProjectRepository | None")  [assignment]
+app\admin\onboarding.py:306: error: Incompatible types in assignment (expression has type "FeishuResource", variable ha
+s type "ProjectRepository | None")  [assignment]
+app\admin\onboarding.py:320: error: "ProjectRepository" has no attribute "resource_type"  [attr-defined]
+app\admin\onboarding.py:322: error: "ProjectRepository" has no attribute "name"  [attr-defined]
+app\admin\onboarding.py:323: error: "ProjectRepository" has no attribute "schema_hash"  [attr-defined]
+app\admin\onboarding.py:327: error: "object" has no attribute "get"  [attr-defined]
+app\admin\onboarding.py:329: error: Argument 1 to "filter" of "Query" has incompatible type "bool | Any"; expected "Col
+umnElement[bool] | _HasClauseElement[bool] | SQLCoreOperations[bool] | ExpressionElementRole[bool] | TypedColumnsClause
+Role[bool] | Callable[[], ColumnElement[bool]] | LambdaElement"  [arg-type]
+app\admin\onboarding.py:329: error: Item "None" of "ProjectRepository | None" has no attribute "id"  [union-attr]
+app\admin\onboarding.py:335: error: Item "None" of "ProjectRepository | None" has no attribute "id"  [union-attr]
+app\admin\onboarding.py:348: error: Item "None" of "ProjectRepository | None" has no attribute "revision"  [union-attr]
+app\admin\onboarding.py:367: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\admin\onboarding.py:376: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\collection\service.py:86: error: Incompatible types in assignment (expression has type "FakeFeishuProvider", variab
+le has type "FeishuBitableSource")  [assignment]
+app\collection\service.py:87: error: Incompatible types in assignment (expression has type "FakeGitHubProvider", variab
+le has type "GitHubRepositorySource")  [assignment]
+app\collection\service.py:195: error: Argument "status" to "CollectionStageOutcome" has incompatible type "str"; expect
+ed "Literal['complete', 'partial', 'blocked']"  [arg-type]
+app\collection\service.py:315: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:327: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:329: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:330: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:331: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:332: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:333: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:453: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:454: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:462: error: No overload variant of "dict" matches argument type "object"  [call-overload]
+app\collection\service.py:482: error: Argument "status" to "CollectionStageOutcome" has incompatible type "Literal['com
+plete', 'partial', 'failed']"; expected "Literal['complete', 'partial', 'blocked']"  [arg-type]
+app\collection\service.py:787: error: No overload variant of "list" matches argument type "object"  [call-overload]
+app\collection\service.py:793: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\side_effects\executor.py:177: error: Argument 1 to "_build_partial_failure_summary" has incompatible type "Sequence
+[SideEffectOperation]"; expected "list[SideEffectOperation]"  [arg-type]
+app\side_effects\executor.py:291: error: Argument 1 to "_build_partial_failure_summary" has incompatible type "Sequence
+[SideEffectOperation]"; expected "list[SideEffectOperation]"  [arg-type]
+app\side_effects\executor.py:368: error: Argument 1 to "canonical_json_hash" has incompatible type "object"; expected "
+Mapping[str, object]"  [arg-type]
+app\side_effects\executor.py:369: error: Argument 1 to "canonical_json_hash" has incompatible type "object"; expected "
+Mapping[str, object]"  [arg-type]
+app\side_effects\executor.py:472: error: Argument 1 to "canonical_json_hash" has incompatible type "object"; expected "
+Mapping[str, object]"  [arg-type]
+app\side_effects\executor.py:474: error: Argument 1 to "canonical_json_hash" has incompatible type "object"; expected "
+Mapping[str, object]"  [arg-type]
+app\admin\auth.py:200: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+app\admin\auth.py:230: error: Function is missing a type annotation for one or more arguments  [no-untyped-def]
+app\publishing\service.py:159: error: Argument 1 to "len" has incompatible type "object"; expected "Sized"  [arg-type]
+app\agent\graph.py:52: error: Argument 1 to "_request_generation_confirmation" has incompatible type "GenerationApprova
+lStore | _MissingGenerationApprovalStore"; expected "GenerationApprovalStore"  [arg-type]
+app\agent\graph.py:53: error: Argument 1 to "_wait_generation_confirmation" has incompatible type "GenerationApprovalSt
+ore | _MissingGenerationApprovalStore"; expected "GenerationApprovalStore"  [arg-type]
+app\agent\graph.py:54: error: Argument 1 to "_diagnose_problem" has incompatible type "DiagnosisService | _MissingDiagn
+osisService"; expected "DiagnosisService"  [arg-type]
+app\agent\graph.py:55: error: Argument 1 to "_request_human_input" has incompatible type "HumanInputApprovalStore | _Mi
+ssingHumanInputApprovalStore"; expected "HumanInputApprovalStore"  [arg-type]
+app\agent\graph.py:56: error: Argument 1 to "_wait_human_input" has incompatible type "HumanInputApprovalStore | _Missi
+ngHumanInputApprovalStore"; expected "HumanInputApprovalStore"  [arg-type]
+app\agent\graph.py:57: error: Argument 1 to "_collect_feishu_data" has incompatible type "CollectionService | _MissingC
+ollectionService"; expected "CollectionService"  [arg-type]
+app\agent\graph.py:58: error: Argument 1 to "_collect_github_data" has incompatible type "CollectionService | _MissingC
+ollectionService"; expected "CollectionService"  [arg-type]
+app\agent\graph.py:59: error: Argument 1 to "_normalize_data" has incompatible type "CollectionService | _MissingCollec
+tionService"; expected "CollectionService"  [arg-type]
+app\agent\graph.py:60: error: Argument 1 to "_validate_data" has incompatible type "CollectionService | _MissingCollect
+ionService"; expected "CollectionService"  [arg-type]
+app\agent\graph.py:61: error: Argument 1 to "_calculate_metrics" has incompatible type "MetricsService | _MissingMetric
+sService"; expected "MetricsService"  [arg-type]
+app\agent\graph.py:62: error: Argument 1 to "_build_evidence" has incompatible type "ReportingService | _MissingReporti
+ngService"; expected "ReportingService"  [arg-type]
+app\agent\graph.py:63: error: Argument 1 to "_generate_structured_report" has incompatible type "ReportingService | _Mi
+ssingReportingService"; expected "ReportingService"  [arg-type]
+app\agent\graph.py:64: error: Argument 1 to "_verify_grounding" has incompatible type "ReportingService | _MissingRepor
+tingService"; expected "ReportingService"  [arg-type]
+app\agent\graph.py:65: error: Argument 1 to "_render_report" has incompatible type "ReportingService | _MissingReportin
+gService"; expected "ReportingService"  [arg-type]
+app\agent\graph.py:66: error: Argument 1 to "_build_publish_plan" has incompatible type "PublishingService | _MissingPu
+blishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:67: error: Argument 1 to "_request_publish_confirmation" has incompatible type "PublishingService | 
+_MissingPublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:68: error: Argument 1 to "_wait_publish_confirmation" has incompatible type "PublishingService | _Mi
+ssingPublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:69: error: Argument 1 to "_create_feishu_document" has incompatible type "PublishingService | _Missi
+ngPublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:70: error: Argument 1 to "_send_group_summary" has incompatible type "PublishingService | _MissingPu
+blishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:71: error: Argument 1 to "_archive_report_record" has incompatible type "PublishingService | _Missin
+gPublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:72: error: Argument 1 to "_verify_side_effects" has incompatible type "PublishingService | _MissingP
+ublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:73: error: Argument 1 to "_compensate_partial_failure" has incompatible type "PublishingService | _M
+issingPublishingService"; expected "PublishingService"  [arg-type]
+app\agent\graph.py:356: error: Need type annotation for "approval"  [var-annotated]
+app\agent\graph.py:384: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:423: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:534: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:582: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:692: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:722: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:734: error: List item 0 has incompatible type "str | None"; expected "str"  [list-item]
+app\agent\graph.py:742: error: List item 0 has incompatible type "str | None"; expected "str"  [list-item]
+app\agent\graph.py:751: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:763: error: List item 0 has incompatible type "str | None"; expected "str"  [list-item]
+app\agent\graph.py:771: error: List item 0 has incompatible type "str | None"; expected "str"  [list-item]
+app\agent\graph.py:780: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:803: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:834: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:864: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:895: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:931: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:962: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:994: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1048: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1106: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1156: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1160: error: Argument "requested_from" to "resume_publish_confirmation" of "PublishingService" has i
+ncompatible type "object"; expected "Sequence[str] | None"  [arg-type]
+app\agent\graph.py:1183: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1190: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1244: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1248: error: Argument "requested_from" to "resume_publish_confirmation" of "PublishingService" has i
+ncompatible type "object"; expected "Sequence[str] | None"  [arg-type]
+app\agent\graph.py:1271: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1278: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1305: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1312: error: No overload variant of "int" matches argument type "object"  [call-overload]
+app\agent\graph.py:1366: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1396: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1416: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1446: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1466: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1496: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1516: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1545: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1548: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1565: error: Function is missing a return type annotation  [no-untyped-def]
+app\agent\graph.py:1594: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\graph.py:1597: error: Item "None" of "dict[str, object] | None" has no attribute "get"  [union-attr]
+app\agent\runtime.py:443: error: Argument "node" to "_command_result" of "WorkflowRuntime" has incompatible type "str |
+ None"; expected "str"  [arg-type]
+app\agent\runtime.py:692: error: Expected TypedDict keys ("project_id", "requester_id", "period_key", "report_period", 
+"scope_revision", "scope_override", "scope", "approval_revision", "approval", "control", "error", "requested_action", "
+resume_from", "cancel_requested") but found keys ("project_id", "requester_id", "period_key", "period_start", "period_e
+nd", "project_timezone", "report_period", "scope_revision", "approval_revision", "requested_action", "resume_from", "ca
+ncel_requested", "scope_override", "scope", "approval", "control", "error")  [typeddict-item]
+app\agent\runtime.py:706: error: Incompatible types (expression has type "None", TypedDict item "requested_action" has 
+type "Literal['approve_generation', 'modify_generation_scope', 'cancel_run', 'reject_generation', 'continue', 'cancel',
+ 'approve_publish', 'regenerate_report', 'update_supplement', 'cancel_publish', 'submit_human_input']")  [typeddict-ite
+m]
+app\agent\runtime.py:709: error: Incompatible types (expression has type "None", TypedDict item "scope_override" has ty
+pe "dict[str, object]")  [typeddict-item]
+app\agent\runtime.py:721: error: Incompatible return value type (got "WorkflowState", expected "dict[str, object]")  [r
+eturn-value]
+app\providers\feishu\callbacks.py:172: error: Function is missing a return type annotation  [no-untyped-def]
+app\providers\feishu\callbacks.py:196: error: "PublishApprovalStore" has no attribute "load_approval_by_challenge"  [at
+tr-defined]
+app\main.py:728: error: Returning Any from function declared to return "Callable[[], Session]"  [no-any-return]
+app\main.py:746: error: Returning Any from function declared to return "FeishuCallbackService"  [no-any-return]
+app\main.py:754: error: Returning Any from function declared to return "WorkflowRuntime"  [no-any-return]
+__EXIT__=1
+

@@ -37,9 +37,10 @@ def render_verified_report(
     evidence_items: Sequence[Mapping[str, object]],
     report_version: int = 1,
 ) -> RenderedReport:
-    report_title = sanitize_prompt_text(
-        structured_report.get("report_title"), max_length=128
-    ) or "Weekly Structured Report"
+    report_title = (
+        sanitize_prompt_text(structured_report.get("report_title"), max_length=128)
+        or "Weekly Structured Report"
+    )
     summary = sanitize_prompt_text(structured_report.get("summary"), max_length=1024)
     period_start = sanitize_prompt_text(structured_report.get("period_start"), max_length=32)
     period_end = sanitize_prompt_text(structured_report.get("period_end"), max_length=32)
@@ -111,7 +112,7 @@ def _as_metrics(value: object) -> dict[str, int]:
 
 
 def _as_claims(value: object) -> list[dict[str, object]]:
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+    if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
         return []
     claims: list[dict[str, object]] = []
     for item in value:
@@ -122,9 +123,13 @@ def _as_claims(value: object) -> list[dict[str, object]]:
 
 def _claim_evidence_keys(claim: Mapping[str, object]) -> list[str]:
     values = claim.get("evidence_keys", [])
-    if not isinstance(values, Sequence) or isinstance(values, (str, bytes, bytearray)):
+    if not isinstance(values, Sequence) or isinstance(values, str | bytes | bytearray):
         return []
-    return [sanitize_prompt_text(value, max_length=128) for value in values if isinstance(value, str) and value]
+    return [
+        sanitize_prompt_text(value, max_length=128)
+        for value in values
+        if isinstance(value, str) and value
+    ]
 
 
 def _format_evidence_ref(evidence_key: str, evidence_item: Mapping[str, object] | None) -> str:

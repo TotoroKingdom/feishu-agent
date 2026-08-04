@@ -1,0 +1,278 @@
+app\admin\__init__.py:1:34: F401 `app.admin.run_detail.RunDetailService` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app\admin\__init__.py:1:52: F401 `app.admin.run_detail.RunDetailView` imported but unused; consider removing, adding to `__all__`, or using a redundant alias
+app\admin\auth.py:241:101: E501 Line too long (102 > 100)
+app\admin\auth.py:400:101: E501 Line too long (101 > 100)
+app\admin\configuration.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\admin\configuration.py:3:39: F401 [*] `collections.abc.Mapping` imported but unused
+app\admin\configuration.py:3:48: F401 [*] `collections.abc.Sequence` imported but unused
+app\admin\configuration.py:6:20: F401 [*] `typing.Any` imported but unused
+app\admin\configuration.py:8:33: F401 [*] `pydantic.ConfigDict` imported but unused
+app\admin\configuration.py:196:101: E501 Line too long (107 > 100)
+app\admin\configuration.py:309:101: E501 Line too long (104 > 100)
+app\admin\configuration.py:565:101: E501 Line too long (103 > 100)
+app\admin\onboarding.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\admin\onboarding.py:104:101: E501 Line too long (111 > 100)
+app\admin\onboarding.py:139:101: E501 Line too long (102 > 100)
+app\admin\onboarding.py:145:101: E501 Line too long (102 > 100)
+app\admin\onboarding.py:389:101: E501 Line too long (109 > 100)
+app\admin\onboarding.py:494:101: E501 Line too long (103 > 100)
+app\admin\onboarding.py:501:101: E501 Line too long (103 > 100)
+app\admin\onboarding.py:576:60: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\admin\onboarding.py:576:101: E501 Line too long (101 > 100)
+app\admin\onboarding.py:609:44: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\admin\onboarding.py:615:44: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\admin\run_detail.py:5:38: F401 [*] `datetime.timezone` imported but unused
+app\admin\run_detail.py:144:101: E501 Line too long (108 > 100)
+app\admin\run_detail.py:176:101: E501 Line too long (106 > 100)
+app\admin\run_detail.py:224:101: E501 Line too long (109 > 100)
+app\admin\run_detail.py:273:101: E501 Line too long (113 > 100)
+app\admin\run_detail.py:282:101: E501 Line too long (111 > 100)
+app\admin\run_detail.py:300:101: E501 Line too long (103 > 100)
+app\admin\run_detail.py:324:101: E501 Line too long (109 > 100)
+app\agent\diagnosis.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\agent\diagnosis.py:8:24: F401 [*] `sqlalchemy.select` imported but unused
+app\agent\diagnosis.py:333:101: E501 Line too long (101 > 100)
+app\agent\graph.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\agent\graph.py:541:101: E501 Line too long (106 > 100)
+app\agent\graph.py:700:101: E501 Line too long (134 > 100)
+app\agent\graph.py:1235:101: E501 Line too long (101 > 100)
+app\agent\graph.py:1324:101: E501 Line too long (102 > 100)
+app\agent\graph.py:1359:101: E501 Line too long (101 > 100)
+app\agent\graph.py:1991:101: E501 Line too long (105 > 100)
+app\agent\graph.py:2002:54: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\agent\graph.py:2059:101: E501 Line too long (102 > 100)
+app\agent\graph.py:2077:20: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\agent\graph.py:2086:51: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\agent\policies\problem_registry.py:241:101: E501 Line too long (108 > 100)
+app\agent\runtime.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\approvals.py:7:20: F401 [*] `typing.Any` imported but unused
+app\approvals.py:104:101: E501 Line too long (102 > 100)
+app\approvals.py:236:48: UP017 [*] Use `datetime.UTC` alias
+app\approvals.py:393:48: UP017 [*] Use `datetime.UTC` alias
+app\approvals.py:416:9: F811 Redefinition of unused `load_approval_by_challenge` from line 366
+app\approvals.py:443:48: UP017 [*] Use `datetime.UTC` alias
+app\approvals.py:470:48: UP017 [*] Use `datetime.UTC` alias
+app\approvals.py:587:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\approvals.py:603:43: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\approvals.py:611:43: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\approvals.py:618:101: E501 Line too long (124 > 100)
+app\approvals.py:625:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\approvals.py:627:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\core\config.py:47:101: E501 Line too long (119 > 100)
+app\db\models.py:269:101: E501 Line too long (101 > 100)
+app\db\models.py:325:101: E501 Line too long (103 > 100)
+app\db\models.py:764:101: E501 Line too long (101 > 100)
+app\domain\metrics.py:3:25: F401 [*] `collections.defaultdict` imported but unused
+app\llm\policies.py:180:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\llm\schema_repair.py:18:5: F401 [*] `app.reports.generation.REPORT_GENERATION_VERSION` imported but unused
+app\llm\schema_repair.py:156:101: E501 Line too long (106 > 100)
+app\llm\schema_repair.py:164:52: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\llm\schema_repair.py:181:101: E501 Line too long (175 > 100)
+app\llm\schema_repair.py:199:43: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\llm\schema_repair.py:214:101: E501 Line too long (111 > 100)
+app\llm\schema_repair.py:231:101: E501 Line too long (117 > 100)
+app\llm\schema_repair.py:242:101: E501 Line too long (107 > 100)
+app\llm\schema_repair.py:287:43: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\llm\schema_repair.py:306:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\llm\schema_repair.py:313:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\main.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\main.py:237:101: E501 Line too long (101 > 100)
+app\main.py:267:101: E501 Line too long (102 > 100)
+app\main.py:273:101: E501 Line too long (103 > 100)
+app\main.py:279:101: E501 Line too long (102 > 100)
+app\main.py:285:101: E501 Line too long (102 > 100)
+app\main.py:299:101: E501 Line too long (101 > 100)
+app\metrics\__init__.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\metrics\service.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\metrics\service.py:11:101: E501 Line too long (112 > 100)
+app\metrics\service.py:135:35: UP017 [*] Use `datetime.UTC` alias
+app\metrics\service.py:189:68: UP017 [*] Use `datetime.UTC` alias
+app\metrics\service.py:190:29: UP017 [*] Use `datetime.UTC` alias
+app\metrics\service.py:190:85: UP017 [*] Use `datetime.UTC` alias
+app\observability\query.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\observability\query.py:172:101: E501 Line too long (107 > 100)
+app\observability\query.py:274:68: UP017 [*] Use `datetime.UTC` alias
+app\providers\feishu\callbacks.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\providers\feishu\callbacks.py:12:5: F401 [*] `app.approvals.GENERATION_APPROVAL_TYPE` imported but unused
+app\providers\feishu\callbacks.py:249:48: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\providers\feishu\callbacks.py:249:101: E501 Line too long (107 > 100)
+app\providers\feishu\callbacks.py:256:48: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\providers\feishu\resume.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\publishing\__init__.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\publishing\generation.py:5:20: F401 [*] `typing.Any` imported but unused
+app\publishing\generation.py:89:8: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reporting\__init__.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\reporting\service.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\reporting\service.py:25:32: F401 [*] `app.domain.metrics.METRICS_DEFINITION_VERSION` imported but unused
+app\reporting\service.py:37:54: F401 [*] `app.reports.grounding.GroundingVerificationResult` imported but unused
+app\reporting\service.py:37:101: E501 Line too long (116 > 100)
+app\reporting\service.py:68:101: E501 Line too long (105 > 100)
+app\reporting\service.py:173:101: E501 Line too long (102 > 100)
+app\reporting\service.py:224:101: E501 Line too long (101 > 100)
+app\reporting\service.py:383:101: E501 Line too long (102 > 100)
+app\reporting\service.py:419:101: E501 Line too long (105 > 100)
+app\reporting\service.py:477:85: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:501:13: F841 Local variable `run` is assigned to but never used
+app\reporting\service.py:531:101: E501 Line too long (101 > 100)
+app\reporting\service.py:651:35: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:751:47: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reporting\service.py:765:31: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:767:40: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:770:31: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:772:81: UP017 [*] Use `datetime.UTC` alias
+app\reporting\service.py:786:64: UP017 [*] Use `datetime.UTC` alias
+app\reports\generation.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\reports\generation.py:226:101: E501 Line too long (104 > 100)
+app\reports\generation.py:277:101: E501 Line too long (102 > 100)
+app\reports\generation.py:301:101: E501 Line too long (104 > 100)
+app\reports\grounding.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\reports\grounding.py:8:101: E501 Line too long (108 > 100)
+app\reports\grounding.py:57:101: E501 Line too long (107 > 100)
+app\reports\grounding.py:184:101: E501 Line too long (114 > 100)
+app\reports\grounding.py:211:44: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reports\grounding.py:221:33: UP017 [*] Use `datetime.UTC` alias
+app\reports\grounding.py:221:101: E501 Line too long (110 > 100)
+app\reports\grounding.py:243:44: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reports\metrics.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\reports\metrics.py:111:101: E501 Line too long (125 > 100)
+app\reports\metrics.py:155:101: E501 Line too long (104 > 100)
+app\reports\metrics.py:313:33: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:313:89: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:313:101: E501 Line too long (101 > 100)
+app\reports\metrics.py:319:34: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:319:92: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:319:101: E501 Line too long (104 > 100)
+app\reports\metrics.py:353:101: E501 Line too long (137 > 100)
+app\reports\metrics.py:403:33: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:403:89: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:403:101: E501 Line too long (101 > 100)
+app\reports\metrics.py:404:53: UP017 [*] Use `datetime.UTC` alias
+app\reports\metrics.py:408:29: UP017 [*] Use `datetime.UTC` alias
+app\reports\rendering.py:114:43: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reports\rendering.py:125:44: UP038 Use `X | Y` in `isinstance` call instead of `(X, Y)`
+app\reports\rendering.py:127:101: E501 Line too long (112 > 100)
+app\reports\validation.py:41:101: E501 Line too long (111 > 100)
+app\runtime\__init__.py:3:1: I001 [*] Import block is un-sorted or un-formatted
+app\runtime\__init__.py:3:101: E501 Line too long (112 > 100)
+app\runtime\leases.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+app\runtime\leases.py:469:101: E501 Line too long (106 > 100)
+app\runtime\leases.py:475:101: E501 Line too long (109 > 100)
+app\runtime\leases.py:499:101: E501 Line too long (109 > 100)
+app\runtime\leases.py:548:101: E501 Line too long (120 > 100)
+tests\e2e\test_local_demo_happy_path.py:3:8: F401 [*] `json` imported but unused
+tests\e2e\test_local_demo_happy_path.py:30:101: E501 Line too long (106 > 100)
+tests\e2e\test_local_demo_happy_path.py:54:101: E501 Line too long (104 > 100)
+tests\e2e\test_local_demo_happy_path.py:100:101: E501 Line too long (102 > 100)
+tests\e2e\test_local_demo_happy_path.py:111:101: E501 Line too long (105 > 100)
+tests\e2e\test_local_demo_happy_path.py:120:101: E501 Line too long (101 > 100)
+tests\e2e\test_local_demo_happy_path.py:121:101: E501 Line too long (101 > 100)
+tests\e2e\test_local_demo_happy_path.py:127:101: E501 Line too long (123 > 100)
+tests\e2e\test_local_demo_happy_path.py:128:101: E501 Line too long (109 > 100)
+tests\e2e\test_local_demo_happy_path.py:129:101: E501 Line too long (105 > 100)
+tests\e2e\test_local_demo_happy_path.py:153:101: E501 Line too long (102 > 100)
+tests\e2e\test_local_demo_happy_path.py:157:101: E501 Line too long (122 > 100)
+tests\e2e\test_local_demo_happy_path.py:179:101: E501 Line too long (115 > 100)
+tests\e2e\test_local_demo_happy_path.py:180:101: E501 Line too long (110 > 100)
+tests\integration\admin\_helpers.py:3:22: F401 [*] `datetime.date` imported but unused
+tests\integration\admin\test_config_crud.py:3:27: F401 [*] `app.db.models.Project` imported but unused
+tests\integration\admin\test_github_connectivity.py:22:101: E501 Line too long (102 > 100)
+tests\integration\admin\test_minimal_run_detail.py:38:101: E501 Line too long (121 > 100)
+tests\integration\admin\test_minimal_run_detail.py:102:41: UP017 [*] Use `datetime.UTC` alias
+tests\integration\admin\test_minimal_run_detail.py:103:39: UP017 [*] Use `datetime.UTC` alias
+tests\integration\admin\test_minimal_run_detail.py:129:101: E501 Line too long (105 > 100)
+tests\integration\admin\test_run_observability_api.py:20:63: UP017 [*] Use `datetime.UTC` alias
+tests\integration\agent\test_grounding.py:80:101: E501 Line too long (103 > 100)
+tests\integration\agent\test_grounding.py:81:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_grounding.py:82:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_grounding.py:95:101: E501 Line too long (119 > 100)
+tests\integration\agent\test_grounding.py:96:101: E501 Line too long (121 > 100)
+tests\integration\agent\test_grounding.py:101:101: E501 Line too long (102 > 100)
+tests\integration\agent\test_grounding.py:107:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_hitl_generation.py:10:29: F401 [*] `app.agent.state.thread_id_for_run` imported but unused
+tests\integration\agent\test_hitl_generation.py:71:101: E501 Line too long (103 > 100)
+tests\integration\agent\test_hitl_generation.py:72:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_hitl_generation.py:73:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_hitl_generation.py:89:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_hitl_generation.py:128:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_hitl_generation.py:134:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_hitl_generation.py:167:101: E501 Line too long (102 > 100)
+tests\integration\agent\test_metrics_node.py:69:101: E501 Line too long (103 > 100)
+tests\integration\agent\test_metrics_node.py:70:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_metrics_node.py:71:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_metrics_node.py:79:101: E501 Line too long (105 > 100)
+tests\integration\agent\test_metrics_node.py:80:101: E501 Line too long (119 > 100)
+tests\integration\agent\test_metrics_node.py:81:101: E501 Line too long (121 > 100)
+tests\integration\agent\test_postgres_runtime.py:101:101: E501 Line too long (106 > 100)
+tests\integration\agent\test_postgres_runtime.py:112:101: E501 Line too long (101 > 100)
+tests\integration\agent\test_publish_confirmation.py:97:101: E501 Line too long (105 > 100)
+tests\integration\agent\test_publish_confirmation.py:103:101: E501 Line too long (106 > 100)
+tests\integration\agent\test_publish_confirmation.py:107:101: E501 Line too long (122 > 100)
+tests\integration\agent\test_publish_confirmation.py:110:101: E501 Line too long (117 > 100)
+tests\integration\agent\test_publish_confirmation.py:120:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_publish_confirmation.py:134:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_publish_confirmation.py:171:101: E501 Line too long (113 > 100)
+tests\integration\agent\test_runtime.py:69:101: E501 Line too long (106 > 100)
+tests\integration\agent\test_structured_report.py:81:101: E501 Line too long (103 > 100)
+tests\integration\agent\test_structured_report.py:82:101: E501 Line too long (104 > 100)
+tests\integration\agent\test_structured_report.py:83:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_structured_report.py:96:101: E501 Line too long (119 > 100)
+tests\integration\agent\test_structured_report.py:97:101: E501 Line too long (121 > 100)
+tests\integration\agent\test_structured_report.py:102:101: E501 Line too long (102 > 100)
+tests\integration\agent\test_structured_report.py:108:101: E501 Line too long (108 > 100)
+tests\integration\agent\test_structured_report.py:138:101: E501 Line too long (103 > 100)
+tests\integration\persistence\test_data_lifecycle.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\integration\persistence\test_data_lifecycle.py:27:5: F401 [*] `app.db.models.new_id` imported but unused
+tests\integration\recovery\test_lease_heartbeat.py:11:42: F401 [*] `app.db.models.ReportRun` imported but unused
+tests\integration\recovery\test_lease_heartbeat.py:67:101: E501 Line too long (117 > 100)
+tests\integration\recovery\test_lease_heartbeat.py:143:101: E501 Line too long (106 > 100)
+tests\scenarios\test_diagnosis_loop.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\scenarios\test_diagnosis_loop.py:197:101: E501 Line too long (104 > 100)
+tests\scenarios\test_diagnosis_loop.py:218:101: E501 Line too long (104 > 100)
+tests\scenarios\test_diagnosis_loop.py:236:101: E501 Line too long (107 > 100)
+tests\scenarios\test_diagnosis_loop.py:239:101: E501 Line too long (104 > 100)
+tests\scenarios\test_diagnosis_loop.py:256:101: E501 Line too long (107 > 100)
+tests\scenarios\test_diagnosis_loop.py:260:101: E501 Line too long (104 > 100)
+tests\scenarios\test_feishu_onboarding.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\scenarios\test_feishu_onboarding.py:14:101: E501 Line too long (149 > 100)
+tests\scenarios\test_feishu_onboarding.py:23:101: E501 Line too long (108 > 100)
+tests\scenarios\test_feishu_onboarding.py:114:101: E501 Line too long (102 > 100)
+tests\scenarios\test_feishu_onboarding.py:170:101: E501 Line too long (107 > 100)
+tests\scenarios\test_feishu_onboarding.py:179:101: E501 Line too long (108 > 100)
+tests\scenarios\test_feishu_onboarding.py:201:101: E501 Line too long (102 > 100)
+tests\scenarios\test_feishu_onboarding.py:205:101: E501 Line too long (106 > 100)
+tests\scenarios\test_feishu_onboarding.py:217:101: E501 Line too long (104 > 100)
+tests\scenarios\test_feishu_onboarding.py:222:101: E501 Line too long (106 > 100)
+tests\scenarios\test_grounding_quality.py:85:101: E501 Line too long (123 > 100)
+tests\scenarios\test_grounding_quality.py:89:101: E501 Line too long (108 > 100)
+tests\scenarios\test_grounding_quality.py:154:101: E501 Line too long (105 > 100)
+tests\scenarios\test_human_input_resume.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\scenarios\test_human_input_resume.py:15:101: E501 Line too long (111 > 100)
+tests\scenarios\test_human_input_resume.py:250:101: E501 Line too long (107 > 100)
+tests\scenarios\test_human_input_resume.py:269:101: E501 Line too long (107 > 100)
+tests\scenarios\test_report_regeneration.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\scenarios\test_report_regeneration.py:87:101: E501 Line too long (105 > 100)
+tests\scenarios\test_report_regeneration.py:88:101: E501 Line too long (105 > 100)
+tests\scenarios\test_report_regeneration.py:96:101: E501 Line too long (103 > 100)
+tests\scenarios\test_report_regeneration.py:97:101: E501 Line too long (113 > 100)
+tests\scenarios\test_report_regeneration.py:98:101: E501 Line too long (117 > 100)
+tests\scenarios\test_report_regeneration.py:99:101: E501 Line too long (113 > 100)
+tests\scenarios\test_report_regeneration.py:103:101: E501 Line too long (106 > 100)
+tests\scenarios\test_report_regeneration.py:104:101: E501 Line too long (102 > 100)
+tests\scenarios\test_report_regeneration.py:106:101: E501 Line too long (103 > 100)
+tests\scenarios\test_report_regeneration.py:136:101: E501 Line too long (105 > 100)
+tests\scenarios\test_report_regeneration.py:161:101: E501 Line too long (108 > 100)
+tests\unit\reports\test_metrics.py:55:101: E501 Line too long (104 > 100)
+tests\unit\reports\test_validation.py:9:54: UP017 [*] Use `datetime.UTC` alias
+tests\unit\reports\test_validation.py:10:55: UP017 [*] Use `datetime.UTC` alias
+tests\unit\reports\test_validation.py:11:53: UP017 [*] Use `datetime.UTC` alias
+tests\unit\reports\test_validation.py:95:101: E501 Line too long (101 > 100)
+tests\unit\side_effects\test_executor.py:1:1: I001 [*] Import block is un-sorted or un-formatted
+tests\unit\side_effects\test_executor.py:9:58: F401 [*] `app.db.models.ReportRun` imported but unused
+tests\unit\side_effects\test_executor.py:9:101: E501 Line too long (121 > 100)
+tests\unit\side_effects\test_executor.py:46:38: UP017 [*] Use `datetime.UTC` alias
+tests\unit\side_effects\test_executor.py:130:101: E501 Line too long (122 > 100)
+tests\unit\side_effects\test_executor.py:140:101: E501 Line too long (104 > 100)
+Found 274 errors.
+[*] 77 fixable with the `--fix` option (26 hidden fixes can be enabled with the `--unsafe-fixes` option).
+__EXIT__=1
+

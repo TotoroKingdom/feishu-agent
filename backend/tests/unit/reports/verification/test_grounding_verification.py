@@ -110,7 +110,9 @@ def _validated_report(*, include_github_evidence: bool = True) -> dict[str, obje
         validation_status="complete",
         evidence_items=evidence_items,
         metric_values=_metric_values(include_github_evidence=include_github_evidence),
-        member_activity_breakdown=_member_activity_breakdown(include_github_evidence=include_github_evidence),
+        member_activity_breakdown=_member_activity_breakdown(
+            include_github_evidence=include_github_evidence
+        ),
     )
     return validate_structured_report_payload(
         payload,

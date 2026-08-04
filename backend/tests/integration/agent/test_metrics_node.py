@@ -66,9 +66,15 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
-    first_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
-    duplicate_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    waiting_publish = runtime.resume(
+        run_id, _approval_payload(started.snapshot, "approve_generation")
+    )
+    first_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
+    duplicate_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
 
     assert started.status == "waiting"
     assert waiting_publish.status == "waiting"
@@ -76,9 +82,18 @@ def test_metrics_node_persists_snapshot_and_reuses_it_on_duplicate_resume() -> N
     assert duplicate_resume.status == "completed"
     assert waiting_publish.snapshot.values["current_stage"] == "waiting_publish_approval"  # type: ignore[index]
     assert first_resume.snapshot.values["current_stage"] == "succeeded"  # type: ignore[index]
-    assert first_resume.snapshot.values["metrics_ref"] == duplicate_resume.snapshot.values["metrics_ref"]  # type: ignore[index]
-    assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
-    assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
+    assert (
+        first_resume.snapshot.values["metrics_ref"]
+        == duplicate_resume.snapshot.values["metrics_ref"]
+    )  # type: ignore[index]
+    assert (
+        first_resume.snapshot.values["report_version_ref"]
+        == duplicate_resume.snapshot.values["report_version_ref"]
+    )  # type: ignore[index]
+    assert (
+        first_resume.snapshot.values["rendered_report_ref"]
+        == duplicate_resume.snapshot.values["rendered_report_ref"]
+    )  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))

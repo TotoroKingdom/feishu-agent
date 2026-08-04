@@ -12,7 +12,15 @@ from sqlalchemy.pool import StaticPool
 from app.agent.runtime import WorkflowRuntime
 from app.collection.service import CollectionProviders, CollectionService, CollectionStageOutcome
 from app.core.config import Settings
-from app.db.models import Base, HumanApproval, NormalizedSnapshot, Project, ReportRun, ValidationResult, new_id
+from app.db.models import (
+    Base,
+    HumanApproval,
+    NormalizedSnapshot,
+    Project,
+    ReportRun,
+    ValidationResult,
+    new_id,
+)
 from app.domain.runs import RunCreationService
 from app.main import create_app
 from app.providers.fake import FakeFeishuProvider, FakeGitHubProvider, FakeScenario
@@ -247,7 +255,9 @@ def test_human_input_rejects_invalid_payload_and_accepts_valid_supplement() -> N
 
     with factory() as session:
         approval = session.scalar(
-            select(HumanApproval).where(HumanApproval.challenge_id == human_input_approval["challenge_id"])
+            select(HumanApproval).where(
+                HumanApproval.challenge_id == human_input_approval["challenge_id"]
+            )
         )
         assert approval is not None
         assert approval.status == "pending"
@@ -266,7 +276,9 @@ def test_human_input_rejects_invalid_payload_and_accepts_valid_supplement() -> N
 
     with factory() as session:
         approval = session.scalar(
-            select(HumanApproval).where(HumanApproval.challenge_id == human_input_approval["challenge_id"])
+            select(HumanApproval).where(
+                HumanApproval.challenge_id == human_input_approval["challenge_id"]
+            )
         )
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         assert approval is not None

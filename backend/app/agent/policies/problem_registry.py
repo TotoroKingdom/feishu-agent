@@ -238,7 +238,9 @@ class ProblemPolicyRegistry:
                 "severity": "high",
                 "recoverability": "retryable",
                 "planned_action": "repair_and_retry",
-                "next_node": "generate_structured_report" if node_name == "verify_grounding" else node_name,
+                "next_node": "generate_structured_report"
+                if node_name == "verify_grounding"
+                else node_name,
                 "exit_route": "retry",
                 "max_attempts": 2,
                 "allowed_actions": ("repair_and_retry", "abort_run"),

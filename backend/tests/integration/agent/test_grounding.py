@@ -77,9 +77,15 @@ def test_grounding_and_rendering_are_persisted() -> None:
     runtime, run_id, factory = make_runtime()
 
     started = runtime.start(run_id)
-    waiting_publish = runtime.resume(run_id, _approval_payload(started.snapshot, "approve_generation"))
-    first_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
-    duplicate_resume = runtime.resume(run_id, _publish_payload(waiting_publish.snapshot, "approve_publish"))
+    waiting_publish = runtime.resume(
+        run_id, _approval_payload(started.snapshot, "approve_generation")
+    )
+    first_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
+    duplicate_resume = runtime.resume(
+        run_id, _publish_payload(waiting_publish.snapshot, "approve_publish")
+    )
 
     assert started.status == "waiting"
     assert waiting_publish.status == "waiting"
@@ -92,19 +98,29 @@ def test_grounding_and_rendering_are_persisted() -> None:
     assert first_resume.snapshot.values["evidence_set_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
     assert first_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
-    assert first_resume.snapshot.values["report_version_ref"] == duplicate_resume.snapshot.values["report_version_ref"]  # type: ignore[index]
-    assert first_resume.snapshot.values["rendered_report_ref"] == duplicate_resume.snapshot.values["rendered_report_ref"]  # type: ignore[index]
+    assert (
+        first_resume.snapshot.values["report_version_ref"]
+        == duplicate_resume.snapshot.values["report_version_ref"]
+    )  # type: ignore[index]
+    assert (
+        first_resume.snapshot.values["rendered_report_ref"]
+        == duplicate_resume.snapshot.values["rendered_report_ref"]
+    )  # type: ignore[index]
 
     with factory() as session:
         run_row = session.scalar(select(ReportRun).where(ReportRun.id == run_id))
         metric_row = session.scalar(select(MetricSnapshot).where(MetricSnapshot.run_id == run_id))
-        evidence_sets = session.scalars(select(EvidenceSet).where(EvidenceSet.run_id == run_id)).all()
+        evidence_sets = session.scalars(
+            select(EvidenceSet).where(EvidenceSet.run_id == run_id)
+        ).all()
         evidence_items = session.scalars(
             select(EvidenceItem)
             .join(EvidenceSet, EvidenceItem.evidence_set_id == EvidenceSet.id)
             .where(EvidenceSet.run_id == run_id)
         ).all()
-        report_versions = session.scalars(select(ReportVersion).where(ReportVersion.run_id == run_id)).all()
+        report_versions = session.scalars(
+            select(ReportVersion).where(ReportVersion.run_id == run_id)
+        ).all()
         report_claims = session.scalars(
             select(ReportClaim).join(ReportVersion).where(ReportVersion.run_id == run_id)
         ).all()

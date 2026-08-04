@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
@@ -10,14 +10,14 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AuditLog,
+    DiagnosisRecord,
     EvidenceItem,
     EvidenceSet,
-    DiagnosisRecord,
     HumanApproval,
     LlmExecution,
+    NodeExecution,
     PublishPlan,
     ReportArtifact,
-    NodeExecution,
     ReportRun,
     RunStatusHistory,
     SideEffectOperation,
@@ -116,9 +116,9 @@ class RunObservabilityQueryService:
         with self.session_factory() as session:
             self._require_run(session, run_id)
             rows = session.scalars(
-                select(HumanApproval).where(HumanApproval.run_id == run_id).order_by(
-                    HumanApproval.created_at, HumanApproval.revision, HumanApproval.id
-                )
+                select(HumanApproval)
+                .where(HumanApproval.run_id == run_id)
+                .order_by(HumanApproval.created_at, HumanApproval.revision, HumanApproval.id)
             ).all()
             items = [self._approval_row(row) for row in rows]
             return self._page(items, cursor=cursor, limit=limit)
@@ -169,7 +169,9 @@ class RunObservabilityQueryService:
             row = session.scalar(
                 select(PublishPlan)
                 .where(PublishPlan.run_id == run_id)
-                .order_by(PublishPlan.version.desc(), PublishPlan.created_at.desc(), PublishPlan.id.desc())
+                .order_by(
+                    PublishPlan.version.desc(), PublishPlan.created_at.desc(), PublishPlan.id.desc()
+                )
             )
             if row is None:
                 return None
@@ -271,7 +273,7 @@ class RunObservabilityQueryService:
             )
         events.sort(
             key=lambda item: (
-                item["occurred_at"] or datetime.min.replace(tzinfo=timezone.utc),
+                item["occurred_at"] or datetime.min.replace(tzinfo=UTC),
                 item["event_type"],
                 str(item["event_id"]),
             )

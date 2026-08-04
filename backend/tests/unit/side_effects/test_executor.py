@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.db.models import Base, Project, ReportArtifact, ReportRun, ReportVersion, SideEffectAttempt, SideEffectOperation
+from app.db.models import (
+    Base,
+    Project,
+    ReportArtifact,
+    ReportVersion,
+    SideEffectAttempt,
+    SideEffectOperation,
+)
 from app.domain.runs import RunCreationService
 from app.publishing.service import PublishingService
 from app.side_effects.executor import SideEffectExecutor
@@ -43,7 +50,7 @@ def _make_factory() -> tuple[sessionmaker[Session], str, str, str]:
             model_info={"provider": "fake"},
             confidence=0.95,
             data_quality_status="complete",
-            verified_at=datetime.now(timezone.utc),
+            verified_at=datetime.now(UTC),
         )
         session.add(report_version)
         session.commit()
@@ -127,7 +134,9 @@ def test_side_effect_executor_runs_all_publish_operations_in_order() -> None:
 
     with factory() as session:
         operations = session.scalars(
-            select(SideEffectOperation).where(SideEffectOperation.run_id == run_id).order_by(SideEffectOperation.sequence)
+            select(SideEffectOperation)
+            .where(SideEffectOperation.run_id == run_id)
+            .order_by(SideEffectOperation.sequence)
         ).all()
         artifacts = session.scalars(
             select(ReportArtifact)
@@ -137,7 +146,11 @@ def test_side_effect_executor_runs_all_publish_operations_in_order() -> None:
         ).all()
 
         assert [operation.sequence for operation in operations] == [1, 2, 3]
-        assert [operation.status for operation in operations] == ["succeeded", "succeeded", "succeeded"]
+        assert [operation.status for operation in operations] == [
+            "succeeded",
+            "succeeded",
+            "succeeded",
+        ]
         assert [artifact.artifact_type for artifact in artifacts] == [
             "feishu_document",
             "group_message",

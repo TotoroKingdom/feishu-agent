@@ -11,7 +11,16 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.core.config import Settings
-from app.db.models import Base, EncryptedCredential, FeishuFieldMapping, FeishuResource, PromptVersion, Project, ProjectRepository, OnboardingSession
+from app.db.models import (
+    Base,
+    EncryptedCredential,
+    FeishuFieldMapping,
+    FeishuResource,
+    OnboardingSession,
+    Project,
+    ProjectRepository,
+    PromptVersion,
+)
 from app.main import create_app
 from tests.admin_auth import authenticate_admin
 
@@ -20,7 +29,9 @@ def _encoded_key() -> str:
     return base64.urlsafe_b64encode(os.urandom(32)).decode()
 
 
-def _make_client(*, allowed_refs: list[str] | None = None) -> tuple[TestClient, sessionmaker[Session], str]:
+def _make_client(
+    *, allowed_refs: list[str] | None = None
+) -> tuple[TestClient, sessionmaker[Session], str]:
     engine = create_engine(
         "sqlite+pysqlite://",
         connect_args={"check_same_thread": False},
@@ -111,7 +122,9 @@ def _draft_payload() -> dict[str, object]:
 def test_onboarding_flow_persists_session_and_configuration() -> None:
     client, factory, project_id = _make_client()
 
-    start_response = client.post("/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"})
+    start_response = client.post(
+        "/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"}
+    )
     assert start_response.status_code == 201
     session = start_response.json()["data"]
     assert session["status"] == "in_progress"
@@ -167,7 +180,9 @@ def test_onboarding_flow_persists_session_and_configuration() -> None:
         assert project.timezone == "Asia/Shanghai"
         assert project.default_prompt_version_id is not None
 
-        repository = db.scalar(select(ProjectRepository).where(ProjectRepository.project_id == project_id))
+        repository = db.scalar(
+            select(ProjectRepository).where(ProjectRepository.project_id == project_id)
+        )
         assert repository is not None
         assert repository.owner == "openai"
         assert repository.repo == "feishu-agent"
@@ -176,7 +191,9 @@ def test_onboarding_flow_persists_session_and_configuration() -> None:
         assert resource is not None
         assert resource.external_id == "tbl_123"
 
-        mapping = db.scalar(select(FeishuFieldMapping).where(FeishuFieldMapping.resource_id == resource.id))
+        mapping = db.scalar(
+            select(FeishuFieldMapping).where(FeishuFieldMapping.resource_id == resource.id)
+        )
         assert mapping is not None
         assert mapping.logical_field == "task_id"
 
@@ -198,11 +215,15 @@ def test_onboarding_flow_persists_session_and_configuration() -> None:
 def test_onboarding_reuses_active_session_and_rejects_unauthorized_actor() -> None:
     client, factory, _ = _make_client(allowed_refs=["ou_123"])
 
-    first_response = client.post("/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"})
+    first_response = client.post(
+        "/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"}
+    )
     assert first_response.status_code == 201
     first_session = first_response.json()["data"]
 
-    duplicate_response = client.post("/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"})
+    duplicate_response = client.post(
+        "/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"}
+    )
     assert duplicate_response.status_code == 200
     duplicate_session = duplicate_response.json()["data"]
     assert duplicate_session["id"] == first_session["id"]
@@ -214,10 +235,14 @@ def test_onboarding_reuses_active_session_and_rejects_unauthorized_actor() -> No
         row.expires_at = datetime.now(UTC) - timedelta(minutes=1)
         db.commit()
 
-    resumed_response = client.post("/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"})
+    resumed_response = client.post(
+        "/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_123"}
+    )
     assert resumed_response.status_code == 201
     resumed_session = resumed_response.json()["data"]
     assert resumed_session["id"] != first_session["id"]
 
-    forbidden_response = client.post("/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_999"})
+    forbidden_response = client.post(
+        "/api/v1/admin/onboarding/start", json={"feishu_actor_id": "ou_999"}
+    )
     assert forbidden_response.status_code in {403, 404}

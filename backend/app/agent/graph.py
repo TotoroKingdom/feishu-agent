@@ -16,12 +16,12 @@ from app.approvals import (
     APPROVAL_ACTION_LEGACY_CANCEL,
     APPROVAL_ACTION_MODIFY,
     APPROVAL_ACTION_REJECT,
-    GenerationApprovalStore,
-    HUMAN_INPUT_APPROVAL_ACTIONS,
     APPROVAL_ACTION_SUBMIT_HUMAN_INPUT,
+    HUMAN_INPUT_APPROVAL_ACTIONS,
+    GenerationApprovalStore,
     HumanInputApprovalStore,
-    canonical_json_hash,
     build_generation_scope,
+    canonical_json_hash,
 )
 from app.collection.service import CollectionService, CollectionStageOutcome
 from app.metrics.service import MetricsService, MetricStageOutcome
@@ -538,7 +538,9 @@ def _request_human_input(store: HumanInputApprovalStore):
         requested_fields = _human_input_requested_fields(diagnosis)
         resume_from = _human_input_resume_from(diagnosis)
         prompt_schema = {
-            "problem_key": str(diagnosis.get("problem_key") or diagnosis.get("active_problem_key") or ""),
+            "problem_key": str(
+                diagnosis.get("problem_key") or diagnosis.get("active_problem_key") or ""
+            ),
             "requested_fields": requested_fields,
             "resume_from": resume_from,
             "checkpoint_id": str(diagnosis.get("checkpoint_id") or ""),
@@ -697,7 +699,11 @@ def _diagnose_problem(diagnosis_service: DiagnosisService):
             return {
                 "diagnosis": outcome.diagnosis_patch,
                 "current_stage": "blocked",
-                "current_node": str(state.get("diagnosis", {}).get("source_node") or state.get("current_node") or "diagnose_problem"),
+                "current_node": str(
+                    state.get("diagnosis", {}).get("source_node")
+                    or state.get("current_node")
+                    or "diagnose_problem"
+                ),
                 "error_code": state.get("error_code"),
                 "error_summary": state.get("error_summary"),
             }
@@ -1232,7 +1238,8 @@ def _wait_publish_confirmation(publisher: PublishingService):
                     "supplement": supplement,
                 },
                 "cancel_requested": False,
-                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"}
+                "report_regeneration_requested": action
+                in {"regenerate_report", "update_supplement"}
                 and scope_override is None,
             }
 
@@ -1321,7 +1328,8 @@ def _wait_publish_confirmation(publisher: PublishingService):
                     "supplement": supplement,
                 },
                 "cancel_requested": False,
-                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"},
+                "report_regeneration_requested": action
+                in {"regenerate_report", "update_supplement"},
             }
 
         return {
@@ -1347,17 +1355,17 @@ def _wait_publish_confirmation(publisher: PublishingService):
             "approval_revision": outcome.approval_revision,
             "current_stage": outcome.current_stage,
             "current_node": outcome.current_node,
+            "requested_action": action,
+            "resume_from": "wait_publish_confirmation",
+            "control": {
                 "requested_action": action,
                 "resume_from": "wait_publish_confirmation",
-                "control": {
-                    "requested_action": action,
-                    "resume_from": "wait_publish_confirmation",
-                    "cancel_requested": outcome.current_stage == "cancelled",
-                    "supplement": supplement,
-                },
                 "cancel_requested": outcome.current_stage == "cancelled",
-                "report_regeneration_requested": action in {"regenerate_report", "update_supplement"}
-                and scope_override is None,
+                "supplement": supplement,
+            },
+            "cancel_requested": outcome.current_stage == "cancelled",
+            "report_regeneration_requested": action in {"regenerate_report", "update_supplement"}
+            and scope_override is None,
         }
 
     return _node
@@ -1988,7 +1996,9 @@ def _resume_supplement(payload: Mapping[str, object], action: str) -> dict[str, 
     return dict(supplement)
 
 
-def _scope_override_from_supplement(supplement: Mapping[str, object] | None) -> dict[str, object] | None:
+def _scope_override_from_supplement(
+    supplement: Mapping[str, object] | None,
+) -> dict[str, object] | None:
     if supplement is None:
         return None
     override = supplement.get("scope_override")
@@ -2000,7 +2010,7 @@ def _scope_override_from_supplement(supplement: Mapping[str, object] | None) -> 
 def _human_input_requested_fields(diagnosis: Mapping[str, object]) -> list[dict[str, object]]:
     requested_fields = diagnosis.get("required_fields")
     if not isinstance(requested_fields, Sequence) or isinstance(
-        requested_fields, (str, bytes, bytearray)
+        requested_fields, str | bytes | bytearray
     ):
         raise ValueError("diagnosis.required_fields is required")
     fields: list[dict[str, object]] = []
@@ -2056,7 +2066,9 @@ def _validate_human_input_supplement(
     }
     unknown_keys = set(supplement) - allowed_names
     if unknown_keys:
-        raise ValueError(f"unsupported supplement fields: {sorted(str(key) for key in unknown_keys)}")
+        raise ValueError(
+            f"unsupported supplement fields: {sorted(str(key) for key in unknown_keys)}"
+        )
     for field in requested_fields:
         name = field.get("name")
         field_type = field.get("type")
@@ -2074,7 +2086,7 @@ def _validate_human_input_supplement(
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"supplement.{name} must be a non-empty string")
         elif field_type == "number":
-            if not isinstance(value, (int, float)) or isinstance(value, bool):
+            if not isinstance(value, int | float) or isinstance(value, bool):
                 raise ValueError(f"supplement.{name} must be a number")
         elif field_type == "boolean":
             if not isinstance(value, bool):
@@ -2083,7 +2095,7 @@ def _validate_human_input_supplement(
             if not isinstance(value, Mapping):
                 raise ValueError(f"supplement.{name} must be a mapping")
         elif field_type == "array":
-            if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+            if not isinstance(value, Sequence) or isinstance(value, str | bytes | bytearray):
                 raise ValueError(f"supplement.{name} must be a list")
         else:
             raise ValueError("unsupported supplement field type")
