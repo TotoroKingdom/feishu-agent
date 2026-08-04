@@ -9,11 +9,12 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts._ops import ARTIFACTS, ROOT
+from scripts._ops import ARTIFACTS, ROOT, generated_artifact_dir
 
 
-BACKUP_PATH = ARTIFACTS / "recovery-drill" / "postgres-backup.sql"
-SEED_PATH = ARTIFACTS / "recovery-drill" / "seed-state.json"
+OUTPUT_DIR = generated_artifact_dir("recovery-drill", ARTIFACTS)
+BACKUP_PATH = OUTPUT_DIR / "postgres-backup.sql"
+SEED_PATH = OUTPUT_DIR / "seed-state.json"
 
 
 def run(
@@ -125,7 +126,7 @@ with factory() as session:
         ["docker", "compose", "exec", "-T", "backend", "python", "-c", code]
     )
     payload = json.loads(output.strip().splitlines()[-1])
-    SEED_PATH.parent.mkdir(exist_ok=True)
+    SEED_PATH.parent.mkdir(parents=True, exist_ok=True)
     SEED_PATH.write_text(
         json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
     )
@@ -133,7 +134,7 @@ with factory() as session:
 
 
 def backup_database() -> None:
-    BACKUP_PATH.parent.mkdir(exist_ok=True)
+    BACKUP_PATH.parent.mkdir(parents=True, exist_ok=True)
     with BACKUP_PATH.open("w", encoding="utf-8", newline="\n") as stream:
         run(
             [
@@ -202,7 +203,7 @@ with factory() as session:
 
 
 def main() -> None:
-    ARTIFACTS.mkdir(exist_ok=True)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     run(
         [
             "docker",

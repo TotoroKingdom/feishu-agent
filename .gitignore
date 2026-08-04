@@ -9,5 +9,9 @@ __pycache__/
 node_modules/
 .next/
 coverage/
+*.egg-info/
+/backend/.build-metadata/*
+!/backend/.build-metadata/.gitkeep
+/artifacts/generated/
 .worktrees/
 worktrees/

@@ -169,6 +169,8 @@ jobs:
   sbom:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      FEISHU_AGENT_ARTIFACT_RUN_ID: github-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - uses: actions/checkout@v4
       - name: Generate SBOMs
@@ -177,4 +179,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sbom
-          path: artifacts/sbom
+          path: artifacts/generated/${{ env.FEISHU_AGENT_ARTIFACT_RUN_ID }}/sbom
+          if-no-files-found: error

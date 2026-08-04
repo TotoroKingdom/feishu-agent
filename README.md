@@ -16,6 +16,23 @@
 - `python scripts/dependency_scan.py`
 - `python scripts/secret_scan.py`
 
+## Artifact Policy
+
+- Repeatable command output is written to
+  `artifacts/generated/<run-id>/<command>/`; this tree is ignored by Git.
+- Set `FEISHU_AGENT_ARTIFACT_RUN_ID` to a safe run identifier when several
+  commands must share one output directory. Otherwise, each process creates a
+  timestamped run identifier.
+- Evidence that must be reviewed and versioned belongs in a separate
+  `artifacts/evidence/<timestamp>-<scope>/` directory and must contain only
+  redacted summaries. Historical tracked artifacts remain preserved, but
+  commands no longer use them as output targets.
+- Setuptools metadata is generated below `backend/.build-metadata/`, which is
+  ignored, instead of overwriting tracked `backend/*.egg-info` files.
+- TypeScript incremental metadata is generated below the ignored
+  `frontend/.next/cache/` tree instead of overwriting tracked
+  `frontend/tsconfig.tsbuildinfo`.
+
 ## Deployment Notes
 
 - `backend` and `frontend` are internal services in Compose.

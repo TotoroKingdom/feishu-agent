@@ -7,7 +7,7 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts._ops import ARTIFACTS, ROOT, run
+from scripts._ops import ARTIFACTS, ROOT, generated_artifact_dir, run
 
 
 SUSPICIOUS_PATTERNS = [
@@ -74,8 +74,9 @@ def _iter_text_files(root: Path) -> list[Path]:
 
 
 def main() -> None:
-    ARTIFACTS.mkdir(exist_ok=True)
-    compose_snapshot = ARTIFACTS / "compose.config.yml"
+    output_dir = generated_artifact_dir("secret-scan", ARTIFACTS)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    compose_snapshot = output_dir / "compose.config.yml"
     with compose_snapshot.open("w", encoding="utf-8", newline="\n") as stream:
         run(["docker", "compose", "config"], ROOT, stdout=stream)
 

@@ -22,6 +22,7 @@ ALTER TABLE IF EXISTS ONLY public.source_data_batches DROP CONSTRAINT IF EXISTS 
 ALTER TABLE IF EXISTS ONLY public.side_effect_operations DROP CONSTRAINT IF EXISTS side_effect_operations_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.side_effect_operations DROP CONSTRAINT IF EXISTS side_effect_operations_publish_plan_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.side_effect_attempts DROP CONSTRAINT IF EXISTS side_effect_attempts_operation_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.schedule_configs DROP CONSTRAINT IF EXISTS schedule_configs_project_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.run_status_history DROP CONSTRAINT IF EXISTS run_status_history_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.report_versions DROP CONSTRAINT IF EXISTS report_versions_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.report_runs DROP CONSTRAINT IF EXISTS report_runs_project_id_fkey;
@@ -41,6 +42,7 @@ ALTER TABLE IF EXISTS ONLY public.normalized_entities DROP CONSTRAINT IF EXISTS 
 ALTER TABLE IF EXISTS ONLY public.node_executions DROP CONSTRAINT IF EXISTS node_executions_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.metric_snapshots DROP CONSTRAINT IF EXISTS metric_snapshots_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.metric_snapshots DROP CONSTRAINT IF EXISTS metric_snapshots_normalized_snapshot_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.login_audits DROP CONSTRAINT IF EXISTS login_audits_admin_user_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.llm_executions DROP CONSTRAINT IF EXISTS llm_executions_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.llm_executions DROP CONSTRAINT IF EXISTS llm_executions_node_execution_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.human_approvals DROP CONSTRAINT IF EXISTS human_approvals_run_id_fkey;
@@ -58,6 +60,7 @@ ALTER TABLE IF EXISTS ONLY public.diagnosis_records DROP CONSTRAINT IF EXISTS di
 ALTER TABLE IF EXISTS ONLY public.callback_events DROP CONSTRAINT IF EXISTS callback_events_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.audit_logs DROP CONSTRAINT IF EXISTS audit_logs_run_id_fkey;
 ALTER TABLE IF EXISTS ONLY public.async_jobs DROP CONSTRAINT IF EXISTS async_jobs_run_id_fkey;
+ALTER TABLE IF EXISTS ONLY public.admin_sessions DROP CONSTRAINT IF EXISTS admin_sessions_admin_user_id_fkey;
 DROP INDEX IF EXISTS public.uq_onboarding_sessions_active_actor;
 DROP INDEX IF EXISTS public.ix_validation_results_run_created;
 DROP INDEX IF EXISTS public.ix_tool_executions_tool_status_started;
@@ -73,6 +76,8 @@ DROP INDEX IF EXISTS public.ix_side_effect_operations_run_status;
 DROP INDEX IF EXISTS public.ix_side_effect_operations_run_id;
 DROP INDEX IF EXISTS public.ix_side_effect_operations_publish_plan_id;
 DROP INDEX IF EXISTS public.ix_side_effect_attempts_operation_id;
+DROP INDEX IF EXISTS public.ix_schedule_configs_project_id;
+DROP INDEX IF EXISTS public.ix_schedule_configs_enabled_next_fire_at;
 DROP INDEX IF EXISTS public.ix_run_status_history_run_id;
 DROP INDEX IF EXISTS public.ix_report_versions_run_id;
 DROP INDEX IF EXISTS public.ix_report_runs_status_lease_expires_at;
@@ -99,6 +104,7 @@ DROP INDEX IF EXISTS public.ix_node_executions_run_started;
 DROP INDEX IF EXISTS public.ix_node_executions_run_id;
 DROP INDEX IF EXISTS public.ix_metric_snapshots_run_id;
 DROP INDEX IF EXISTS public.ix_metric_snapshots_normalized_snapshot_id;
+DROP INDEX IF EXISTS public.ix_login_audits_username_created_at;
 DROP INDEX IF EXISTS public.ix_llm_executions_run_id;
 DROP INDEX IF EXISTS public.ix_llm_executions_run_created_at;
 DROP INDEX IF EXISTS public.ix_llm_executions_node_execution_id;
@@ -123,6 +129,7 @@ DROP INDEX IF EXISTS public.ix_audit_logs_run_id;
 DROP INDEX IF EXISTS public.ix_audit_logs_actor_occurred;
 DROP INDEX IF EXISTS public.ix_audit_logs_action_occurred;
 DROP INDEX IF EXISTS public.ix_async_jobs_status_created;
+DROP INDEX IF EXISTS public.ix_admin_sessions_admin_user_id;
 ALTER TABLE IF EXISTS ONLY public.validation_results DROP CONSTRAINT IF EXISTS validation_results_pkey;
 ALTER TABLE IF EXISTS ONLY public.validation_results DROP CONSTRAINT IF EXISTS uq_validation_results;
 ALTER TABLE IF EXISTS ONLY public.tool_executions DROP CONSTRAINT IF EXISTS uq_tool_executions_attempt;
@@ -130,6 +137,7 @@ ALTER TABLE IF EXISTS ONLY public.source_data_batches DROP CONSTRAINT IF EXISTS 
 ALTER TABLE IF EXISTS ONLY public.side_effect_operations DROP CONSTRAINT IF EXISTS uq_side_effect_operations_sequence;
 ALTER TABLE IF EXISTS ONLY public.side_effect_operations DROP CONSTRAINT IF EXISTS uq_side_effect_operations_idempotency_key;
 ALTER TABLE IF EXISTS ONLY public.side_effect_attempts DROP CONSTRAINT IF EXISTS uq_side_effect_attempts;
+ALTER TABLE IF EXISTS ONLY public.schedule_configs DROP CONSTRAINT IF EXISTS uq_schedule_configs_project_id;
 ALTER TABLE IF EXISTS ONLY public.report_versions DROP CONSTRAINT IF EXISTS uq_report_versions_version;
 ALTER TABLE IF EXISTS ONLY public.report_versions DROP CONSTRAINT IF EXISTS uq_report_versions_content_hash;
 ALTER TABLE IF EXISTS ONLY public.report_runs DROP CONSTRAINT IF EXISTS uq_report_runs_thread_id;
@@ -161,10 +169,13 @@ ALTER TABLE IF EXISTS ONLY public.encrypted_credentials DROP CONSTRAINT IF EXIST
 ALTER TABLE IF EXISTS ONLY public.diagnosis_records DROP CONSTRAINT IF EXISTS uq_diagnosis_records_attempt;
 ALTER TABLE IF EXISTS ONLY public.callback_events DROP CONSTRAINT IF EXISTS uq_callback_events_provider_event_id;
 ALTER TABLE IF EXISTS ONLY public.async_jobs DROP CONSTRAINT IF EXISTS uq_async_jobs_request;
+ALTER TABLE IF EXISTS ONLY public.admin_users DROP CONSTRAINT IF EXISTS uq_admin_users_username;
+ALTER TABLE IF EXISTS ONLY public.admin_sessions DROP CONSTRAINT IF EXISTS uq_admin_sessions_refresh_token_hash;
 ALTER TABLE IF EXISTS ONLY public.tool_executions DROP CONSTRAINT IF EXISTS tool_executions_pkey;
 ALTER TABLE IF EXISTS ONLY public.source_data_batches DROP CONSTRAINT IF EXISTS source_data_batches_pkey;
 ALTER TABLE IF EXISTS ONLY public.side_effect_operations DROP CONSTRAINT IF EXISTS side_effect_operations_pkey;
 ALTER TABLE IF EXISTS ONLY public.side_effect_attempts DROP CONSTRAINT IF EXISTS side_effect_attempts_pkey;
+ALTER TABLE IF EXISTS ONLY public.schedule_configs DROP CONSTRAINT IF EXISTS schedule_configs_pkey;
 ALTER TABLE IF EXISTS ONLY public.run_status_history DROP CONSTRAINT IF EXISTS run_status_history_pkey;
 ALTER TABLE IF EXISTS ONLY public.report_versions DROP CONSTRAINT IF EXISTS report_versions_pkey;
 ALTER TABLE IF EXISTS ONLY public.report_runs DROP CONSTRAINT IF EXISTS report_runs_pkey;
@@ -182,6 +193,7 @@ ALTER TABLE IF EXISTS ONLY public.normalized_entities DROP CONSTRAINT IF EXISTS 
 ALTER TABLE IF EXISTS ONLY public.node_executions DROP CONSTRAINT IF EXISTS node_executions_pkey;
 ALTER TABLE IF EXISTS ONLY public.model_configs DROP CONSTRAINT IF EXISTS model_configs_pkey;
 ALTER TABLE IF EXISTS ONLY public.metric_snapshots DROP CONSTRAINT IF EXISTS metric_snapshots_pkey;
+ALTER TABLE IF EXISTS ONLY public.login_audits DROP CONSTRAINT IF EXISTS login_audits_pkey;
 ALTER TABLE IF EXISTS ONLY public.llm_executions DROP CONSTRAINT IF EXISTS llm_executions_pkey;
 ALTER TABLE IF EXISTS ONLY public.human_approvals DROP CONSTRAINT IF EXISTS human_approvals_pkey;
 ALTER TABLE IF EXISTS ONLY public.feishu_resources DROP CONSTRAINT IF EXISTS feishu_resources_pkey;
@@ -195,6 +207,8 @@ ALTER TABLE IF EXISTS ONLY public.callback_events DROP CONSTRAINT IF EXISTS call
 ALTER TABLE IF EXISTS ONLY public.audit_logs DROP CONSTRAINT IF EXISTS audit_logs_pkey;
 ALTER TABLE IF EXISTS ONLY public.async_jobs DROP CONSTRAINT IF EXISTS async_jobs_pkey;
 ALTER TABLE IF EXISTS ONLY public.alembic_version DROP CONSTRAINT IF EXISTS alembic_version_pkc;
+ALTER TABLE IF EXISTS ONLY public.admin_users DROP CONSTRAINT IF EXISTS admin_users_pkey;
+ALTER TABLE IF EXISTS ONLY public.admin_sessions DROP CONSTRAINT IF EXISTS admin_sessions_pkey;
 ALTER TABLE IF EXISTS public.run_status_history ALTER COLUMN id DROP DEFAULT;
 ALTER TABLE IF EXISTS public.callback_events ALTER COLUMN id DROP DEFAULT;
 ALTER TABLE IF EXISTS public.audit_logs ALTER COLUMN id DROP DEFAULT;
@@ -203,6 +217,7 @@ DROP TABLE IF EXISTS public.tool_executions;
 DROP TABLE IF EXISTS public.source_data_batches;
 DROP TABLE IF EXISTS public.side_effect_operations;
 DROP TABLE IF EXISTS public.side_effect_attempts;
+DROP TABLE IF EXISTS public.schedule_configs;
 DROP SEQUENCE IF EXISTS public.run_status_history_id_seq;
 DROP TABLE IF EXISTS public.run_status_history;
 DROP TABLE IF EXISTS public.report_versions;
@@ -221,6 +236,7 @@ DROP TABLE IF EXISTS public.normalized_entities;
 DROP TABLE IF EXISTS public.node_executions;
 DROP TABLE IF EXISTS public.model_configs;
 DROP TABLE IF EXISTS public.metric_snapshots;
+DROP TABLE IF EXISTS public.login_audits;
 DROP TABLE IF EXISTS public.llm_executions;
 DROP TABLE IF EXISTS public.human_approvals;
 DROP TABLE IF EXISTS public.feishu_resources;
@@ -236,9 +252,44 @@ DROP SEQUENCE IF EXISTS public.audit_logs_id_seq;
 DROP TABLE IF EXISTS public.audit_logs;
 DROP TABLE IF EXISTS public.async_jobs;
 DROP TABLE IF EXISTS public.alembic_version;
+DROP TABLE IF EXISTS public.admin_users;
+DROP TABLE IF EXISTS public.admin_sessions;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: admin_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_sessions (
+    id character varying(36) NOT NULL,
+    admin_user_id character varying(36) NOT NULL,
+    refresh_token_hash character varying(64) NOT NULL,
+    issued_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    revoked_at timestamp with time zone,
+    ip_hash character varying(64),
+    user_agent_summary character varying(512)
+);
+
+
+--
+-- Name: admin_users; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.admin_users (
+    id character varying(36) NOT NULL,
+    username character varying(64) NOT NULL,
+    password_hash character varying(256) NOT NULL,
+    status character varying(16) NOT NULL,
+    failed_login_count integer NOT NULL,
+    locked_until timestamp with time zone,
+    last_login_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
 
 --
 -- Name: alembic_version; Type: TABLE; Schema: public; Owner: -
@@ -550,6 +601,22 @@ CREATE TABLE public.llm_executions (
     total_tokens integer,
     duration_ms integer,
     error_class character varying(128),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: login_audits; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.login_audits (
+    id character varying(36) NOT NULL,
+    admin_user_id character varying(36),
+    username character varying(64) NOT NULL,
+    success boolean NOT NULL,
+    failure_reason character varying(128),
+    ip_hash character varying(64),
+    user_agent_summary character varying(512),
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
@@ -923,6 +990,25 @@ ALTER SEQUENCE public.run_status_history_id_seq OWNED BY public.run_status_histo
 
 
 --
+-- Name: schedule_configs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.schedule_configs (
+    id character varying(36) NOT NULL,
+    project_id character varying(36) NOT NULL,
+    cron_expression character varying(128) NOT NULL,
+    timezone character varying(64) NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    misfire_policy character varying(24) DEFAULT 'fire_once'::character varying NOT NULL,
+    next_fire_at timestamp with time zone,
+    last_fire_at timestamp with time zone,
+    revision integer DEFAULT 1 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: side_effect_attempts; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1065,6 +1151,22 @@ ALTER TABLE ONLY public.run_status_history ALTER COLUMN id SET DEFAULT nextval('
 
 
 --
+-- Data for Name: admin_sessions; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.admin_sessions (id, admin_user_id, refresh_token_hash, issued_at, expires_at, revoked_at, ip_hash, user_agent_summary) FROM stdin;
+\.
+
+
+--
+-- Data for Name: admin_users; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.admin_users (id, username, password_hash, status, failed_login_count, locked_until, last_login_at, created_at, updated_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: alembic_version; Type: TABLE DATA; Schema: public; Owner: -
 --
 
@@ -1170,6 +1272,14 @@ COPY public.llm_executions (id, run_id, node_execution_id, provider, model, prom
 
 
 --
+-- Data for Name: login_audits; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.login_audits (id, admin_user_id, username, success, failure_reason, ip_hash, user_agent_summary, created_at) FROM stdin;
+\.
+
+
+--
 -- Data for Name: metric_snapshots; Type: TABLE DATA; Schema: public; Owner: -
 --
 
@@ -1238,7 +1348,7 @@ COPY public.project_repositories (id, project_id, external_id, provider, owner, 
 --
 
 COPY public.projects (id, name, timezone, created_at, description, default_period_rule, default_prompt_version_id, revision, updated_at) FROM stdin;
-0f7b44ec-7994-423d-87d5-5df65af48095	Recovery Drill	Asia/Shanghai	2026-07-31 10:01:05.396594+00	\N	{}	\N	1	2026-07-31 10:01:05.396594+00
+a37a380d-d9d7-4fa9-9e23-c0d6bd19f892	Recovery Drill	Asia/Shanghai	2026-08-01 06:10:09.249629+00	\N	{}	\N	1	2026-08-01 06:10:09.249629+00
 \.
 
 
@@ -1287,7 +1397,7 @@ COPY public.report_evidence (id, claim_id, evidence_item_id, citation_order, rel
 --
 
 COPY public.report_runs (id, project_id, period_key, period_start, period_end, status, created_at, thread_id, graph_version, state_schema_version, current_stage, current_node, scope_revision, approved_publish_plan_id, lease_owner, lease_expires_at, heartbeat_at, version) FROM stdin;
-50a73aa6-9f19-4103-a3a1-1c0b78baa45e	0f7b44ec-7994-423d-87d5-5df65af48095	2026-W31	2026-07-27	2026-08-03	created	2026-07-31 10:01:05.396594+00	report-run:50a73aa6-9f19-4103-a3a1-1c0b78baa45e	weekly_report.v1	1	created	\N	1	\N	\N	\N	\N	1
+f508ee29-8dde-45e8-ab00-7a1087b852c8	a37a380d-d9d7-4fa9-9e23-c0d6bd19f892	2026-W31	2026-07-27	2026-08-03	created	2026-08-01 06:10:09.249629+00	report-run:f508ee29-8dde-45e8-ab00-7a1087b852c8	weekly_report.v1	1	created	\N	1	\N	\N	\N	\N	1
 \.
 
 
@@ -1304,6 +1414,14 @@ COPY public.report_versions (id, run_id, version, status, structured_report, str
 --
 
 COPY public.run_status_history (id, run_id, from_status, to_status, reason_code, actor_type, actor_id, node_name, checkpoint_ref, created_at) FROM stdin;
+\.
+
+
+--
+-- Data for Name: schedule_configs; Type: TABLE DATA; Schema: public; Owner: -
+--
+
+COPY public.schedule_configs (id, project_id, cron_expression, timezone, enabled, misfire_policy, next_fire_at, last_fire_at, revision, created_at, updated_at) FROM stdin;
 \.
 
 
@@ -1366,6 +1484,22 @@ SELECT pg_catalog.setval('public.callback_events_id_seq', 1, false);
 --
 
 SELECT pg_catalog.setval('public.run_status_history_id_seq', 1, false);
+
+
+--
+-- Name: admin_sessions admin_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_sessions
+    ADD CONSTRAINT admin_sessions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_users admin_users_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_users
+    ADD CONSTRAINT admin_users_pkey PRIMARY KEY (id);
 
 
 --
@@ -1470,6 +1604,14 @@ ALTER TABLE ONLY public.human_approvals
 
 ALTER TABLE ONLY public.llm_executions
     ADD CONSTRAINT llm_executions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: login_audits login_audits_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_audits
+    ADD CONSTRAINT login_audits_pkey PRIMARY KEY (id);
 
 
 --
@@ -1609,6 +1751,14 @@ ALTER TABLE ONLY public.run_status_history
 
 
 --
+-- Name: schedule_configs schedule_configs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedule_configs
+    ADD CONSTRAINT schedule_configs_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: side_effect_attempts side_effect_attempts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1638,6 +1788,22 @@ ALTER TABLE ONLY public.source_data_batches
 
 ALTER TABLE ONLY public.tool_executions
     ADD CONSTRAINT tool_executions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: admin_sessions uq_admin_sessions_refresh_token_hash; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_sessions
+    ADD CONSTRAINT uq_admin_sessions_refresh_token_hash UNIQUE (refresh_token_hash);
+
+
+--
+-- Name: admin_users uq_admin_users_username; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_users
+    ADD CONSTRAINT uq_admin_users_username UNIQUE (username);
 
 
 --
@@ -1889,6 +2055,14 @@ ALTER TABLE ONLY public.report_versions
 
 
 --
+-- Name: schedule_configs uq_schedule_configs_project_id; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedule_configs
+    ADD CONSTRAINT uq_schedule_configs_project_id UNIQUE (project_id);
+
+
+--
 -- Name: side_effect_attempts uq_side_effect_attempts; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -1942,6 +2116,13 @@ ALTER TABLE ONLY public.validation_results
 
 ALTER TABLE ONLY public.validation_results
     ADD CONSTRAINT validation_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: ix_admin_sessions_admin_user_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_admin_sessions_admin_user_id ON public.admin_sessions USING btree (admin_user_id);
 
 
 --
@@ -2110,6 +2291,13 @@ CREATE INDEX ix_llm_executions_run_created_at ON public.llm_executions USING btr
 --
 
 CREATE INDEX ix_llm_executions_run_id ON public.llm_executions USING btree (run_id);
+
+
+--
+-- Name: ix_login_audits_username_created_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_login_audits_username_created_at ON public.login_audits USING btree (username, created_at);
 
 
 --
@@ -2295,6 +2483,20 @@ CREATE INDEX ix_run_status_history_run_id ON public.run_status_history USING btr
 
 
 --
+-- Name: ix_schedule_configs_enabled_next_fire_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_schedule_configs_enabled_next_fire_at ON public.schedule_configs USING btree (enabled, next_fire_at);
+
+
+--
+-- Name: ix_schedule_configs_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX ix_schedule_configs_project_id ON public.schedule_configs USING btree (project_id);
+
+
+--
 -- Name: ix_side_effect_attempts_operation_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -2397,6 +2599,14 @@ CREATE INDEX ix_validation_results_run_created ON public.validation_results USIN
 --
 
 CREATE UNIQUE INDEX uq_onboarding_sessions_active_actor ON public.onboarding_sessions USING btree (feishu_actor_id) WHERE ((status)::text = ANY ((ARRAY['in_progress'::character varying, 'pending_confirmation'::character varying])::text[]));
+
+
+--
+-- Name: admin_sessions admin_sessions_admin_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.admin_sessions
+    ADD CONSTRAINT admin_sessions_admin_user_id_fkey FOREIGN KEY (admin_user_id) REFERENCES public.admin_users(id) ON DELETE CASCADE;
 
 
 --
@@ -2533,6 +2743,14 @@ ALTER TABLE ONLY public.llm_executions
 
 ALTER TABLE ONLY public.llm_executions
     ADD CONSTRAINT llm_executions_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.report_runs(id) ON DELETE CASCADE;
+
+
+--
+-- Name: login_audits login_audits_admin_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.login_audits
+    ADD CONSTRAINT login_audits_admin_user_id_fkey FOREIGN KEY (admin_user_id) REFERENCES public.admin_users(id) ON DELETE SET NULL;
 
 
 --
@@ -2685,6 +2903,14 @@ ALTER TABLE ONLY public.report_versions
 
 ALTER TABLE ONLY public.run_status_history
     ADD CONSTRAINT run_status_history_run_id_fkey FOREIGN KEY (run_id) REFERENCES public.report_runs(id);
+
+
+--
+-- Name: schedule_configs schedule_configs_project_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.schedule_configs
+    ADD CONSTRAINT schedule_configs_project_id_fkey FOREIGN KEY (project_id) REFERENCES public.projects(id);
 
 
 --

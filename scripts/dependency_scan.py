@@ -6,14 +6,13 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts._ops import ARTIFACTS, NPM, ROOT, run
+from scripts._ops import ARTIFACTS, NPM, ROOT, generated_artifact_dir, run
 
 
 def main() -> None:
-    ARTIFACTS.mkdir(exist_ok=True)
     run(["docker", "compose", "build", "backend", "frontend", "nginx"], ROOT)
-    output_dir = ARTIFACTS / "dependency-scan"
-    output_dir.mkdir(exist_ok=True)
+    output_dir = generated_artifact_dir("dependency-scan", ARTIFACTS)
+    output_dir.mkdir(parents=True, exist_ok=True)
     backend_check = output_dir / "backend.pip-check.txt"
     with backend_check.open("w", encoding="utf-8", newline="\n") as stream:
         run(

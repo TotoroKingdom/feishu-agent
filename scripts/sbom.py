@@ -6,7 +6,7 @@ from pathlib import Path
 if __package__ is None or __package__ == "":
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from scripts._ops import ARTIFACTS, ROOT, run
+from scripts._ops import ARTIFACTS, ROOT, generated_artifact_dir, run
 
 
 IMAGES = [
@@ -17,7 +17,7 @@ IMAGES = [
 
 
 def main() -> None:
-    output_dir = ARTIFACTS / "sbom"
+    output_dir = generated_artifact_dir("sbom", ARTIFACTS)
     output_dir.mkdir(parents=True, exist_ok=True)
     run(["docker", "compose", "build", "backend", "frontend", "nginx"], ROOT)
 
