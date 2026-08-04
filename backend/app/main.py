@@ -2,6 +2,7 @@ import hmac
 import re
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import date
+from typing import cast
 from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Request
@@ -741,7 +742,7 @@ app = create_app()
 def _session_factory(application: FastAPI) -> SessionFactory:
     factory = application.state.session_factory
     if factory is not None:
-        return factory
+        return cast(SessionFactory, factory)
     engine = create_engine(application.state.settings.database_url)
     return sessionmaker(engine, class_=Session, expire_on_commit=False)
 
@@ -759,7 +760,7 @@ def _feishu_callback_service(application: FastAPI) -> FeishuCallbackService:
             runtime_factory=runtime_factory,
         )
         application.state.feishu_callback_service = service
-    return service
+    return cast(FeishuCallbackService, service)
 
 
 def _workflow_runtime(application: FastAPI) -> WorkflowRuntime:
@@ -767,7 +768,7 @@ def _workflow_runtime(application: FastAPI) -> WorkflowRuntime:
     if runtime is None:
         runtime = WorkflowRuntime(_session_factory(application), MemorySaver())
         application.state.workflow_runtime = runtime
-    return runtime
+    return cast(WorkflowRuntime, runtime)
 
 
 def _configuration_service(application: FastAPI) -> AdminConfigurationService:

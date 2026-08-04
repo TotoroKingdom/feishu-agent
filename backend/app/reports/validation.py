@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import Literal
 
 from app.domain.source import (
     DEFAULT_FEISHU_RESOURCE_ID,
@@ -66,6 +67,7 @@ def validate_normalized_entities(
 
     critical_count = len(critical_items)
     warning_count = len(warnings)
+    status: Literal["complete", "partial", "blocked"]
     if critical_count:
         status = "blocked"
         validation_pass = False

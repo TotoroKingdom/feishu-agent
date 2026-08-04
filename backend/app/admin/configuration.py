@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -506,7 +506,7 @@ class AdminConfigurationService:
                 }
             )
             job.status = "succeeded"
-            job.result_summary = result_summary
+            job.result_summary = cast(dict[str, object], result_summary)
             job.completed_at = datetime.now(UTC)
             session.flush()
             session.commit()

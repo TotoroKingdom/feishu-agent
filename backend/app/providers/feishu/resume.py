@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from typing import cast
 
 from app.approvals import (
     APPROVAL_ACTION_APPROVE,
@@ -71,16 +72,18 @@ def build_resume_payload(
     if action.payload:
         payload["payload"] = dict(action.payload)
         if normalized_action == APPROVAL_ACTION_MODIFY and "scope_override" in action.payload:
-            payload["scope_override"] = dict(action.payload["scope_override"])  # type: ignore[arg-type]
+            scope_override = cast(Mapping[str, object], action.payload["scope_override"])
+            payload["scope_override"] = dict(scope_override)
         if (
             normalized_action == APPROVAL_ACTION_UPDATE_SUPPLEMENT
             and "supplement" in action.payload
         ):
-            payload["supplement"] = dict(action.payload["supplement"])  # type: ignore[arg-type]
+            supplement_payload = cast(Mapping[str, object], action.payload["supplement"])
+            payload["supplement"] = dict(supplement_payload)
         if normalized_action == APPROVAL_ACTION_SUBMIT_HUMAN_INPUT:
-            supplement = action.payload.get("supplement")
-            if isinstance(supplement, Mapping):
-                payload["supplement"] = dict(supplement)
+            human_input_supplement = action.payload.get("supplement")
+            if isinstance(human_input_supplement, Mapping):
+                payload["supplement"] = dict(human_input_supplement)
             else:
                 payload["supplement"] = dict(action.payload)
     return payload

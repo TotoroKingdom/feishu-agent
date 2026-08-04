@@ -4,6 +4,17 @@ __EXIT__=0
 >>> git rev-parse --short=12 HEAD
 042bf19dd2b3
 __EXIT__=0
+>>> pre-evidence-capture git status --short --untracked-files=all
+<empty>
+__EXIT__=0
+>>> pre-evidence-capture git diff --stat
+<empty>
+__EXIT__=0
+>>> pre-evidence-capture git diff --check
+<empty>
+__EXIT__=0
+NOTE: The following status snapshot was taken after the initial static-check logs had
+already been created, so those three evidence files appear as new R2 artifacts.
 >>> git status --short --untracked-files=all
 ?? artifacts/evidence/20260804T215608+0800-r2/initial-format.txt
 ?? artifacts/evidence/20260804T215608+0800-r2/initial-mypy.txt
@@ -13,4 +24,3 @@ __EXIT__=0
 __EXIT__=0
 >>> git diff --check
 __EXIT__=0
-

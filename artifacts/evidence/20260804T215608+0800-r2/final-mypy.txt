@@ -1,0 +1,4 @@
+>>> Set-Location backend
+>>> python -m mypy app
+Success: no issues found in 78 source files
+__EXIT__=0

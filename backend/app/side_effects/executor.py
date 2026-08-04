@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Literal, cast
@@ -365,8 +365,12 @@ class SideEffectExecutor:
                 publish_plan_id=publish_plan.id,
                 sequence=sequence,
                 operation_type=expected_operation_type,
-                target_hash=canonical_json_hash(operation_spec["target"]),
-                payload_hash=canonical_json_hash(operation_spec["payload"]),
+                target_hash=canonical_json_hash(
+                    cast(Mapping[str, object], operation_spec["target"])
+                ),
+                payload_hash=canonical_json_hash(
+                    cast(Mapping[str, object], operation_spec["payload"])
+                ),
             )
             existing_operation = session.scalar(
                 select(SideEffectOperation).where(
@@ -469,9 +473,13 @@ class SideEffectExecutor:
                     sequence=sequence,
                     operation_type=expected_operation_type,
                     target_ref=_stable_ref(operation_spec["target"]),
-                    target_hash=canonical_json_hash(operation_spec["target"]),
+                    target_hash=canonical_json_hash(
+                        cast(Mapping[str, object], operation_spec["target"])
+                    ),
                     payload_ref=_stable_ref(operation_spec["payload"]),
-                    payload_hash=canonical_json_hash(operation_spec["payload"]),
+                    payload_hash=canonical_json_hash(
+                        cast(Mapping[str, object], operation_spec["payload"])
+                    ),
                     idempotency_key=operation_key,
                     status="running",
                     attempt_count=1,
@@ -785,7 +793,7 @@ def _operation_claim_is_expired(
     return current_time - started_at >= timedelta(seconds=lease_seconds)
 
 
-def _build_partial_failure_summary(operations: list[SideEffectOperation]) -> str:
+def _build_partial_failure_summary(operations: Sequence[SideEffectOperation]) -> str:
     succeeded = sum(1 for operation in operations if operation.status == "succeeded")
     failed = sum(1 for operation in operations if operation.status == "failed")
     unknown = sum(1 for operation in operations if operation.status == "unknown")

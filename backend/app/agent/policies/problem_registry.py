@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, TypedDict
 
 DiagnosisAction = Literal[
     "retry_current_node",
@@ -14,6 +14,17 @@ DiagnosisAction = Literal[
 
 ExitRoute = Literal["retry", "continue", "blocked"]
 Recoverability = Literal["retryable", "degradable", "human", "fatal"]
+
+
+class _ProblemPolicy(TypedDict):
+    severity: str
+    recoverability: Recoverability
+    planned_action: DiagnosisAction
+    next_node: str | None
+    exit_route: ExitRoute
+    max_attempts: int
+    allowed_actions: tuple[DiagnosisAction, ...]
+    retryable: bool
 
 
 @dataclass(frozen=True, slots=True)
@@ -132,7 +143,7 @@ class ProblemPolicyRegistry:
         *,
         node_name: str,
         observation: Mapping[str, object],
-    ) -> dict[str, object]:
+    ) -> _ProblemPolicy:
         is_non_key = _is_non_key_observation(observation, None, None)
         if problem_type == "timeout":
             return {

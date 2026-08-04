@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import date
-from typing import Final, Literal
+from typing import Final, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
@@ -166,7 +166,7 @@ def build_claim_evidence_map(claims: Sequence[Mapping[str, object]]) -> dict[str
         claim_key = str(claim["claim_key"])
         evidence_keys = [
             str(value)
-            for value in claim.get("evidence_keys", [])
+            for value in cast(Sequence[object], claim.get("evidence_keys", []))
             if isinstance(value, str) and value
         ]
         mapping[claim_key] = evidence_keys

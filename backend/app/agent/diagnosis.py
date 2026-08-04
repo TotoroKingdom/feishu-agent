@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy.orm import Session
 
@@ -49,7 +49,9 @@ class DiagnosisService:
         observation = _build_observation(state, source_node, error_code, error_summary)
 
         current_counters = _mapping_value(diagnosis_state.get("retry_counters"))
-        existing_attempt = int(current_counters.get(_problem_key(source_node, error_code)) or 0)
+        existing_attempt = int(
+            cast(int | str, current_counters.get(_problem_key(source_node, error_code))) or 0
+        )
         attempt = existing_attempt + 1
         resolution = self._registry.resolve(
             node_name=source_node,
@@ -82,7 +84,7 @@ class DiagnosisService:
         diagnosis_record_refs = _append_unique(
             diagnosis_state.get("diagnosis_record_refs"), record.id
         )
-        diagnosis_patch = {
+        diagnosis_patch: dict[str, object] = {
             "source_node": source_node,
             "active_problem_key": resolution.problem_key,
             "retry_counters": retry_counters,

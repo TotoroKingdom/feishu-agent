@@ -8,7 +8,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
-from fastapi import Request
+from fastapi import Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -197,7 +197,7 @@ class AdminAuthService:
             session.expunge(current_session)
             return AdminAuthContext(user=user, session=current_session)
 
-    def set_auth_cookies(self, response, result: AdminAuthResult) -> None:
+    def set_auth_cookies(self, response: Response, result: AdminAuthResult) -> None:
         secure = self._settings.app_profile == "production"
         response.set_cookie(
             ACCESS_COOKIE_NAME,
@@ -227,7 +227,7 @@ class AdminAuthService:
             max_age=self._settings.admin_session_days * 24 * 60 * 60,
         )
 
-    def clear_auth_cookies(self, response) -> None:
+    def clear_auth_cookies(self, response: Response) -> None:
         response.delete_cookie(ACCESS_COOKIE_NAME, path="/")
         response.delete_cookie(REFRESH_COOKIE_NAME, path="/api/v1/admin/auth")
         response.delete_cookie(CSRF_COOKIE_NAME, path="/")

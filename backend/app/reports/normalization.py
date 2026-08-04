@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
+from typing import cast
 
 from app.domain.source import (
     ENTITY_TYPE_FEISHU_RECORD,
@@ -313,7 +314,8 @@ def normalize_github_contributor_records(
             fallback_external_id=f"contributor-{normalized_record.get('login') or index + 1}",
             occurred_at=None,
         )
-        if not _within_period(entity.get("occurred_at"), period_start, period_end):
+        occurred_at = cast(datetime | None, entity.get("occurred_at"))
+        if not _within_period(occurred_at, period_start, period_end):
             continue
         normalized.append(entity)
     return normalized

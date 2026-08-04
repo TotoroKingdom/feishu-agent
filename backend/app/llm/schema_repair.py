@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Literal
+from typing import Literal, cast
 
 from app.llm.policies import (
     sanitize_member_activity_breakdown,
@@ -57,7 +57,8 @@ def repair_structured_report_payload(
         raise ValueError("max_attempts must be at least 1")
 
     canonical_report = _canonical_report(context)
-    allowed_claim_keys = [str(claim["claim_key"]) for claim in canonical_report["claims"]]
+    canonical_claim_values = cast(Sequence[Mapping[str, object]], canonical_report["claims"])
+    allowed_claim_keys = [str(claim["claim_key"]) for claim in canonical_claim_values]
     allowed_evidence_keys = [str(item["evidence_key"]) for item in context.evidence_items]
 
     normalized_payload, dropped_fields = _normalize_payload(
@@ -222,7 +223,9 @@ def _normalize_claims(
         return None
 
     canonical_claims = [
-        dict(item) for item in canonical_report.get("claims", []) if isinstance(item, Mapping)
+        dict(item)
+        for item in cast(Sequence[object], canonical_report.get("claims", []))
+        if isinstance(item, Mapping)
     ]
     canonical_by_key = {
         str(item.get("claim_key")): item

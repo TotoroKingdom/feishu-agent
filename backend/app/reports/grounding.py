@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from app.reports.generation import (
     build_claim_evidence_map,
@@ -188,7 +188,9 @@ def _verify_claim(
 
     claim_evidence_keys = _claim_evidence_keys(claim)
     expected_evidence_keys = [
-        str(value) for value in expected.get("evidence_keys", []) if isinstance(value, str)
+        str(value)
+        for value in cast(Sequence[object], expected.get("evidence_keys", []))
+        if isinstance(value, str)
     ]
     if claim_evidence_keys != expected_evidence_keys:
         return GroundingVerificationResult(

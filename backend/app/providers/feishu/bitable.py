@@ -393,7 +393,9 @@ def _convert_person(value: object, mapping_options: Mapping[str, object]) -> str
     else:
         people = [value]
 
-    person_ids = [_extract_person_id(person) for person in people if _extract_person_id(person)]
+    person_ids = [
+        person_id for person in people if (person_id := _extract_person_id(person)) is not None
+    ]
     if multiple:
         return person_ids
     return person_ids[0] if person_ids else None

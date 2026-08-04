@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Any
+from typing import Any, cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import Select, func, select
@@ -362,7 +362,7 @@ class RunDetailService:
         return status in _TERMINAL_RUN_STATUSES or current_stage in _TERMINAL_STAGES
 
 
-def _latest_activity_query(run_id: str) -> Select[tuple[datetime | None]]:
+def _latest_activity_query(run_id: str) -> Select[tuple[datetime]]:
     return select(func.max(RunStatusHistory.created_at)).where(RunStatusHistory.run_id == run_id)
 
 
@@ -370,7 +370,7 @@ def _summarize_mapping(value: Mapping[str, Any] | None) -> dict[str, Any]:
     if value is None:
         return {}
     redacted = redact_sensitive(value)
-    return _shrink_value(redacted)
+    return cast(dict[str, Any], _shrink_value(redacted))
 
 
 def _shrink_value(value: Any, depth: int = 0) -> Any:

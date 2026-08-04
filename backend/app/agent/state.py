@@ -28,6 +28,9 @@ class WorkflowState(TypedDict, total=False):
     current_stage: str
     current_node: str
     period_key: str
+    period_start: str
+    period_end: str
+    project_timezone: str
     report_period: dict[str, object]
     selected_repository_ids: list[str]
     feishu_resource_refs: list[str]
@@ -44,7 +47,7 @@ class WorkflowState(TypedDict, total=False):
     publish_plan_ref: str | None
     report_regeneration_requested: bool
     scope_revision: int
-    scope_override: dict[str, object]
+    scope_override: dict[str, object] | None
     scope: dict[str, object]
     diagnosis: dict[str, object]
     approval_revision: int
@@ -52,19 +55,22 @@ class WorkflowState(TypedDict, total=False):
     publish: dict[str, object]
     control: dict[str, object]
     error: dict[str, object]
-    requested_action: Literal[
-        "approve_generation",
-        "modify_generation_scope",
-        "cancel_run",
-        "reject_generation",
-        "continue",
-        "cancel",
-        "approve_publish",
-        "regenerate_report",
-        "update_supplement",
-        "cancel_publish",
-        "submit_human_input",
-    ]
+    requested_action: (
+        Literal[
+            "approve_generation",
+            "modify_generation_scope",
+            "cancel_run",
+            "reject_generation",
+            "continue",
+            "cancel",
+            "approve_publish",
+            "regenerate_report",
+            "update_supplement",
+            "cancel_publish",
+            "submit_human_input",
+        ]
+        | None
+    )
     resume_from: str
     cancel_requested: bool
     error_code: str

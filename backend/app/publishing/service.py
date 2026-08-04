@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -156,7 +156,7 @@ class PublishingService:
                 request_summary={"report_version_id": report_version_id},
                 result_summary={
                     "content_hash": plan_hash,
-                    "operation_count": len(plan_payload["operations"]),
+                    "operation_count": len(cast(Sequence[object], plan_payload["operations"])),
                     "publish_plan_version": publish_plan.version,
                 },
                 data_ref=publish_plan.id,

@@ -118,7 +118,7 @@ class GitHubRepositoryReader:
         milestones = self._client.list_repository_milestones(owner, repo)
         contributors = self._client.list_repository_contributors(owner, repo)
         reviews, review_errors = self._collect_reviews(owner, repo, pull_requests)
-        fetch_status = "complete" if not review_errors else "partial"
+        fetch_status: GitHubFetchStatus = "complete" if not review_errors else "partial"
         error_summary = "; ".join(review_errors) if review_errors else None
         return GitHubRepositoryCoreData(
             repository=repository,
@@ -134,7 +134,7 @@ class GitHubRepositoryReader:
         )
 
     def _collect_reviews(
-        self, owner: str, repo: str, pull_requests: Sequence[Mapping[str, object]]
+        self, owner: str, repo: str, pull_requests: list[dict[str, object]]
     ) -> tuple[list[dict[str, object]], list[str]]:
         reviews: list[dict[str, object]] = []
         errors: list[str] = []

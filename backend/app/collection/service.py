@@ -192,7 +192,7 @@ class CollectionService:
                     source_batch_refs=[first_batch_ref] if first_batch_ref is not None else [],
                 )
             return CollectionStageOutcome(
-                status=overall_status,
+                status=cast(Literal["complete", "partial"], overall_status),
                 source_batch_ref=first_batch_ref,
                 source_batch_refs=[first_batch_ref] if first_batch_ref is not None else [],
             )
@@ -312,7 +312,12 @@ class CollectionService:
             entity_rows: list[dict[str, object]] = []
             for batch in batches:
                 if batch.source_type == SOURCE_TYPE_FEISHU_BITABLE:
-                    records = list(batch.payload.get("records", []))
+                    records = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("records", []),
+                        )
+                    )
                     entity_rows.extend(
                         normalize_feishu_records(
                             records,
@@ -324,13 +329,43 @@ class CollectionService:
                         )
                     )
                 elif batch.source_type == SOURCE_TYPE_GITHUB:
-                    records = list(batch.payload.get("records", []))
+                    records = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("records", []),
+                        )
+                    )
                     repository = batch.payload.get("repository")
-                    pull_requests = list(batch.payload.get("pull_requests", []))
-                    commits = list(batch.payload.get("commits", []))
-                    reviews = list(batch.payload.get("reviews", []))
-                    milestones = list(batch.payload.get("milestones", []))
-                    contributors = list(batch.payload.get("contributors", []))
+                    pull_requests = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("pull_requests", []),
+                        )
+                    )
+                    commits = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("commits", []),
+                        )
+                    )
+                    reviews = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("reviews", []),
+                        )
+                    )
+                    milestones = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("milestones", []),
+                        )
+                    )
+                    contributors = list(
+                        cast(
+                            Sequence[Mapping[str, object]],
+                            batch.payload.get("contributors", []),
+                        )
+                    )
                     entity_rows.extend(
                         normalize_github_repository_record(
                             repository if isinstance(repository, Mapping) else None,
@@ -450,8 +485,10 @@ class CollectionService:
                             title=_maybe_string(row.get("title")),
                             state=_maybe_string(row.get("state")),
                             author_external_id=_maybe_string(row.get("author_external_id")),
-                            assignee_external_ids=list(row.get("assignee_external_ids", [])),
-                            labels=list(row.get("labels", [])),
+                            assignee_external_ids=list(
+                                cast(Sequence[str], row.get("assignee_external_ids", []))
+                            ),
+                            labels=list(cast(Sequence[str], row.get("labels", []))),
                             milestone_external_id=_maybe_string(row.get("milestone_external_id")),
                             created_at_external=row.get("created_at_external"),
                             updated_at_external=row.get("updated_at_external"),
@@ -459,7 +496,7 @@ class CollectionService:
                             occurred_at=row.get("occurred_at"),
                             raw_batch_id=_maybe_string(row.get("raw_batch_id")),
                             raw_summary=_maybe_string(row.get("raw_summary")),
-                            attributes=dict(row.get("attributes", {})),
+                            attributes=dict(cast(Mapping[str, object], row.get("attributes", {}))),
                             content_hash=str(row["content_hash"]),
                             fetched_at=cast(datetime, row["fetched_at"]),
                         )
@@ -785,13 +822,13 @@ def _read_github_repository_batch(
         return _failed_github_batch(repository_ref, exc, error_code="github_fetch_failed")
 
     payload = github_data.to_payload()
-    records = list(payload.get("records", []))
+    records = list(cast(Sequence[Mapping[str, object]], payload.get("records", [])))
     fetch_status = github_data.fetch_status or _fetch_status(records)
     return GitHubRepositoryBatchOutcome(
         repository_ref=repository_ref,
         payload=payload,
         fetch_status=fetch_status,
-        record_count=int(payload.get("records_count") or len(records)),
+        record_count=int(cast(int | str, payload.get("records_count")) or len(records)),
         error_code=github_data.error_code,
         error_summary=github_data.error_summary,
     )
@@ -914,7 +951,7 @@ def _maybe_string(value: object) -> str | None:
 
 def _normalized_status_from_rows(
     rows: Sequence[Mapping[str, object]],
-) -> Literal["complete", "partial", "failed"]:
+) -> Literal["complete", "partial"]:
     if not rows:
         return "partial"
     warnings = 0

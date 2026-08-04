@@ -706,7 +706,7 @@ python scripts/sbom.py
 | 修复包 | 状态 | 日期 | 代码基线 | 结果与证据 |
 |---|---|---|---|---|
 | R1 | 完成 | 2026-08-04 | `dev` / `431259f54f8e`（未提交工作区） | R1 必需命令 7/7 退出 0；回归测试 7/0/0、根目录累计测试 13/0/0；历史生成物未清理，脚本/CI/TypeScript/包装 metadata 与版本化证据已分流；只读复审无 Critical/Important；真实 Sandbox 未请求/未执行。[证据](../artifacts/evidence/20260804T092428+0800-r1/verification.md) |
-| R2 | 待执行 |  |  |  |
+| R2 | 完成 | 2026-08-04 | `dev` / 实际开始 `042bf19dd2b3`（执行期间外部推进至 `fb081312b153`） | Ruff 274→0、format 54→0、mypy 187→0；unit/contract 76/0/0；未放宽配置、未清理 R1 或历史生成物、未执行 R3/R4；基线偏差与外部提交已如实记录。[证据](../artifacts/evidence/20260804T215608+0800-r2/verification.md) |
 | R3 | 待执行 |  |  |  |
 | R4 | 待执行 |  |  |  |
 | R5 | 待执行 |  |  |  |

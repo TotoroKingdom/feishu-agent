@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -133,7 +133,7 @@ class ReportingService:
                             period_start=item.get("period_start"),
                             period_end=item.get("period_end"),
                             evidence_summary=_maybe_string(item.get("evidence_summary")),
-                            confidence=float(item["confidence"]),
+                            confidence=float(cast(float | str, item["confidence"])),
                             normalized_entity_id=_maybe_string(item.get("normalized_entity_id")),
                             content_hash=str(item["content_hash"]),
                         )
@@ -232,6 +232,7 @@ class ReportingService:
                 ],
                 expected_data_snapshot_hash=data_snapshot_hash,
             )
+            validated_claims = cast(Sequence[Mapping[str, object]], validated_report["claims"])
             structured_hash = build_structured_report_hash(validated_report)
             content_hash = canonical_json_hash(
                 {
@@ -285,7 +286,7 @@ class ReportingService:
                 )
                 session.add(report_version)
                 session.flush()
-                for claim_payload in validated_report["claims"]:
+                for claim_payload in validated_claims:
                     claim = ReportClaim(
                         id=new_id(),
                         report_version_id=report_version.id,
@@ -295,14 +296,14 @@ class ReportingService:
                         importance=str(claim_payload["importance"]),
                         period_start=run.period_start,
                         period_end=run.period_end,
-                        confidence=float(claim_payload["confidence"]),
+                        confidence=float(cast(float | str, claim_payload["confidence"])),
                         grounding_status="unverified",
                     )
                     session.add(claim)
                     session.flush()
                     evidence_keys = [
                         str(value)
-                        for value in claim_payload.get("evidence_keys", [])
+                        for value in cast(Sequence[object], claim_payload.get("evidence_keys", []))
                         if isinstance(value, str)
                     ]
                     for citation_order, evidence_key in enumerate(evidence_keys, start=1):
@@ -328,7 +329,7 @@ class ReportingService:
                 request_summary={"evidence_set_id": evidence_set_id},
                 result_summary={
                     "content_hash": content_hash,
-                    "claim_count": len(validated_report["claims"]),
+                    "claim_count": len(validated_claims),
                     "report_version": report_version.version,
                 },
                 data_ref=report_version.id,
@@ -769,7 +770,7 @@ def _member_activity_breakdown(value: object) -> list[dict[str, object]]:
     return [dict(item) for item in breakdown if isinstance(item, Mapping)]
 
 
-def _is_overdue_entity(entity: NormalizedEntity, period_end: datetime) -> bool:
+def _is_overdue_entity(entity: NormalizedEntity, period_end: date | datetime) -> bool:
     if entity.source_type != SOURCE_TYPE_GITHUB:
         return False
     if str(entity.state or "").casefold() != "open":

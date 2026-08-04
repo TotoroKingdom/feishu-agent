@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Literal, cast
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -89,7 +89,7 @@ class MetricsService:
                 request_summary={"normalized_snapshot_id": normalized_snapshot_id},
                 result_summary={
                     "content_hash": content_hash,
-                    "metric_keys": list(payload.get("metric_keys", [])),
+                    "metric_keys": list(cast(Sequence[object], payload.get("metric_keys", []))),
                 },
                 data_ref=metric_snapshot.id,
                 status="success",

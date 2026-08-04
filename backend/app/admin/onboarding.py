@@ -5,6 +5,7 @@ import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
@@ -178,7 +179,7 @@ class AdminOnboardingService:
             )
             row.credential_ref = credential.id
             draft = dict(row.draft_config or {})
-            credentials = dict(draft.get("credentials") or {})
+            credentials = dict(cast(Mapping[str, object], draft.get("credentials") or {}))
             credentials["github_pat_ref"] = credential.id
             credentials["github_pat_label"] = payload.label
             draft["credentials"] = credentials
@@ -266,14 +267,14 @@ class AdminOnboardingService:
             repo = _required_string(repository_data.get("repo"), "repo")
             repository_type = _optional_string(repository_data.get("repository_type")) or "github"
             external_id = f"{owner}/{repo}"
-            row_data = session.scalar(
+            repository_row = session.scalar(
                 select(ProjectRepository).where(
                     ProjectRepository.project_id == project.id,
                     ProjectRepository.external_id == external_id,
                 )
             )
-            if row_data is None:
-                row_data = ProjectRepository(
+            if repository_row is None:
+                repository_row = ProjectRepository(
                     id=new_id(),
                     project_id=project.id,
                     external_id=external_id,
@@ -281,37 +282,43 @@ class AdminOnboardingService:
                     owner=owner,
                     repo=repo,
                     repository_type=repository_type,
-                    weight=int(repository_data.get("weight") or 100),
+                    weight=int(cast(int | str, repository_data.get("weight")) or 100),
                     enabled=bool(repository_data.get("enabled", True)),
                     default_branch=_optional_string(repository_data.get("default_branch")),
                     last_connectivity_status=None,
                     last_connectivity_at=None,
                     revision=1,
                 )
-                session.add(row_data)
+                session.add(repository_row)
             else:
-                row_data.provider = repository_type
-                row_data.owner = owner
-                row_data.repo = repo
-                row_data.repository_type = repository_type
-                row_data.weight = int(repository_data.get("weight") or row_data.weight)
-                row_data.enabled = bool(repository_data.get("enabled", row_data.enabled))
-                row_data.default_branch = _optional_string(repository_data.get("default_branch"))
-                row_data.revision += 1
+                repository_row.provider = repository_type
+                repository_row.owner = owner
+                repository_row.repo = repo
+                repository_row.repository_type = repository_type
+                repository_row.weight = int(
+                    cast(int | str, repository_data.get("weight")) or repository_row.weight
+                )
+                repository_row.enabled = bool(
+                    repository_data.get("enabled", repository_row.enabled)
+                )
+                repository_row.default_branch = _optional_string(
+                    repository_data.get("default_branch")
+                )
+                repository_row.revision += 1
 
         resources = _as_list(config.get("feishu_resources"))
         for resource_data in resources:
             resource_type = _required_string(resource_data.get("resource_type"), "resource_type")
             external_id = _required_string(resource_data.get("external_id"), "external_id")
-            row_data = session.scalar(
+            resource_row = session.scalar(
                 select(FeishuResource).where(
                     FeishuResource.project_id == project.id,
                     FeishuResource.resource_type == resource_type,
                     FeishuResource.external_id == external_id,
                 )
             )
-            if row_data is None:
-                row_data = FeishuResource(
+            if resource_row is None:
+                resource_row = FeishuResource(
                     id=new_id(),
                     project_id=project.id,
                     resource_type=resource_type,
@@ -323,24 +330,24 @@ class AdminOnboardingService:
                     last_connectivity_status=None,
                     last_connectivity_at=None,
                 )
-                session.add(row_data)
+                session.add(resource_row)
             else:
-                row_data.resource_type = resource_type
-                row_data.external_id = external_id
-                row_data.name = _optional_string(resource_data.get("name"))
-                row_data.schema_hash = _optional_string(resource_data.get("schema_hash"))
-                row_data.enabled = bool(resource_data.get("enabled", row_data.enabled))
-                row_data.revision += 1
+                resource_row.resource_type = resource_type
+                resource_row.external_id = external_id
+                resource_row.name = _optional_string(resource_data.get("name"))
+                resource_row.schema_hash = _optional_string(resource_data.get("schema_hash"))
+                resource_row.enabled = bool(resource_data.get("enabled", resource_row.enabled))
+                resource_row.revision += 1
 
-            mappings = _as_list((config.get("field_mappings") or {}).get(external_id))
+            mappings = _as_list(_as_mapping(config.get("field_mappings")).get(external_id))
             session.query(FeishuFieldMapping).filter(
-                FeishuFieldMapping.resource_id == row_data.id
+                FeishuFieldMapping.resource_id == resource_row.id
             ).delete(synchronize_session=False)
             for item in mappings:
                 session.add(
                     FeishuFieldMapping(
                         id=new_id(),
-                        resource_id=row_data.id,
+                        resource_id=resource_row.id,
                         logical_field=_required_string(item.get("logical_field"), "logical_field"),
                         external_field_id=_required_string(
                             item.get("external_field_id"), "external_field_id"
@@ -353,7 +360,7 @@ class AdminOnboardingService:
                         enabled=bool(item.get("enabled", True)),
                     )
                 )
-            row_data.revision += 1
+            resource_row.revision += 1
 
         prompt_data = _as_mapping(project_data.get("default_prompt"))
         if prompt_data:
@@ -372,7 +379,7 @@ class AdminOnboardingService:
             existing_prompt = session.scalar(
                 select(PromptVersion).where(
                     PromptVersion.prompt_type == prompt_type,
-                    PromptVersion.version == int(version),
+                    PromptVersion.version == int(cast(int | str, version)),
                 )
             )
             content = str(prompt_data.get("content") or "")
@@ -381,7 +388,7 @@ class AdminOnboardingService:
                 existing_prompt = PromptVersion(
                     id=new_id(),
                     prompt_type=prompt_type,
-                    version=int(version),
+                    version=int(cast(int | str, version)),
                     content=content,
                     content_hash=canonical_json_hash(content),
                     status="active",

@@ -91,12 +91,14 @@ def merge_scope_override(
     if unknown_keys:
         raise ValueError(f"unsupported scope override fields: {sorted(unknown_keys)}")
 
-    merged = {
+    report_period = _coerce_report_period(base_scope.get("report_period"))
+    selected_repository_ids = _coerce_string_list(
+        base_scope.get("selected_repository_ids"), "selected_repository_ids"
+    )
+    merged: dict[str, object] = {
         "period_key": _coerce_string(base_scope.get("period_key"), "period_key"),
-        "report_period": _coerce_report_period(base_scope.get("report_period")),
-        "selected_repository_ids": _coerce_string_list(
-            base_scope.get("selected_repository_ids"), "selected_repository_ids"
-        ),
+        "report_period": report_period,
+        "selected_repository_ids": selected_repository_ids,
         "feishu_resource_refs": _coerce_string_list(
             base_scope.get("feishu_resource_refs"), "feishu_resource_refs"
         ),
@@ -112,22 +114,20 @@ def merge_scope_override(
     if "period_key" in override:
         merged["period_key"] = _coerce_string(override["period_key"], "period_key")
     if "report_period" in override:
-        merged["report_period"] = _merge_report_period(
-            merged["report_period"], override["report_period"]
-        )
+        report_period = _merge_report_period(report_period, override["report_period"])
+        merged["report_period"] = report_period
     if "period_start" in override:
-        merged["report_period"]["start_at"] = _coerce_string(
-            override["period_start"], "period_start"
-        )
+        report_period["start_at"] = _coerce_string(override["period_start"], "period_start")
     if "period_end" in override:
-        merged["report_period"]["end_at"] = _coerce_string(override["period_end"], "period_end")
+        report_period["end_at"] = _coerce_string(override["period_end"], "period_end")
     if "timezone" in override:
-        merged["report_period"]["timezone"] = _coerce_string(override["timezone"], "timezone")
+        report_period["timezone"] = _coerce_string(override["timezone"], "timezone")
     if "selected_repository_ids" in override:
-        merged["selected_repository_ids"] = _coerce_string_list(
+        selected_repository_ids = _coerce_string_list(
             override["selected_repository_ids"], "selected_repository_ids"
         )
-        _validate_github_repository_limit(merged["selected_repository_ids"])
+        merged["selected_repository_ids"] = selected_repository_ids
+        _validate_github_repository_limit(selected_repository_ids)
     if "feishu_resource_refs" in override:
         merged["feishu_resource_refs"] = _coerce_string_list(
             override["feishu_resource_refs"], "feishu_resource_refs"
@@ -301,6 +301,12 @@ class PublishApprovalStore:
             session.commit()
             session.refresh(approval)
             return approval
+
+    def load_approval_by_challenge(self, challenge_id: str) -> HumanApproval | None:
+        with self._session_factory() as session:
+            return session.scalar(
+                select(HumanApproval).where(HumanApproval.challenge_id == challenge_id)
+            )
 
 
 class HumanInputApprovalStore:
@@ -550,7 +556,7 @@ def _validate_github_repository_limit(repository_ids: Sequence[str]) -> None:
 def _merge_report_period(base_period: Mapping[str, object], override: object) -> dict[str, object]:
     if not isinstance(override, Mapping):
         raise ValueError("report_period override must be a mapping")
-    merged = {
+    merged: dict[str, object] = {
         "start_at": _coerce_string(base_period.get("start_at"), "start_at"),
         "end_at": _coerce_string(base_period.get("end_at"), "end_at"),
         "timezone": _coerce_string(base_period.get("timezone"), "timezone"),

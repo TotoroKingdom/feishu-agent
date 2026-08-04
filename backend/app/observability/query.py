@@ -185,7 +185,7 @@ class RunObservabilityQueryService:
 
     def _timeline_events(self, session: Session, run_id: str) -> list[dict[str, Any]]:
         events: list[dict[str, Any]] = []
-        for row in session.scalars(
+        for status_row in session.scalars(
             select(RunStatusHistory)
             .where(RunStatusHistory.run_id == run_id)
             .order_by(RunStatusHistory.created_at, RunStatusHistory.id)
@@ -193,20 +193,20 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "status_transition",
-                    "event_id": row.id,
-                    "occurred_at": row.created_at,
+                    "event_id": status_row.id,
+                    "occurred_at": status_row.created_at,
                     "summary": {
-                        "from_status": row.from_status,
-                        "to_status": row.to_status,
-                        "reason_code": row.reason_code,
-                        "actor_type": row.actor_type,
-                        "actor_id": row.actor_id,
-                        "node_name": row.node_name,
-                        "checkpoint_ref": row.checkpoint_ref,
+                        "from_status": status_row.from_status,
+                        "to_status": status_row.to_status,
+                        "reason_code": status_row.reason_code,
+                        "actor_type": status_row.actor_type,
+                        "actor_id": status_row.actor_id,
+                        "node_name": status_row.node_name,
+                        "checkpoint_ref": status_row.checkpoint_ref,
                     },
                 }
             )
-        for row in session.scalars(
+        for node_row in session.scalars(
             select(NodeExecution)
             .where(NodeExecution.run_id == run_id)
             .order_by(NodeExecution.started_at, NodeExecution.node_attempt, NodeExecution.id)
@@ -214,12 +214,12 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "node_execution",
-                    "event_id": row.id,
-                    "occurred_at": row.started_at,
-                    "summary": self._node_row(row),
+                    "event_id": node_row.id,
+                    "occurred_at": node_row.started_at,
+                    "summary": self._node_row(node_row),
                 }
             )
-        for row in session.scalars(
+        for tool_row in session.scalars(
             select(ToolExecution)
             .where(ToolExecution.run_id == run_id)
             .order_by(ToolExecution.started_at, ToolExecution.attempt, ToolExecution.id)
@@ -227,12 +227,12 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "tool_execution",
-                    "event_id": row.id,
-                    "occurred_at": row.started_at,
-                    "summary": self._tool_row(row),
+                    "event_id": tool_row.id,
+                    "occurred_at": tool_row.started_at,
+                    "summary": self._tool_row(tool_row),
                 }
             )
-        for row in session.scalars(
+        for llm_row in session.scalars(
             select(LlmExecution)
             .where(LlmExecution.run_id == run_id)
             .order_by(LlmExecution.created_at, LlmExecution.id)
@@ -240,12 +240,12 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "llm_execution",
-                    "event_id": row.id,
-                    "occurred_at": row.created_at,
-                    "summary": self._llm_row(row),
+                    "event_id": llm_row.id,
+                    "occurred_at": llm_row.created_at,
+                    "summary": self._llm_row(llm_row),
                 }
             )
-        for row in session.scalars(
+        for diagnosis_row in session.scalars(
             select(DiagnosisRecord)
             .where(DiagnosisRecord.run_id == run_id)
             .order_by(DiagnosisRecord.created_at, DiagnosisRecord.attempt, DiagnosisRecord.id)
@@ -253,12 +253,12 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "diagnosis_record",
-                    "event_id": row.id,
-                    "occurred_at": row.created_at,
-                    "summary": self._diagnosis_row(row),
+                    "event_id": diagnosis_row.id,
+                    "occurred_at": diagnosis_row.created_at,
+                    "summary": self._diagnosis_row(diagnosis_row),
                 }
             )
-        for row in session.scalars(
+        for audit_row in session.scalars(
             select(AuditLog)
             .where(AuditLog.run_id == run_id)
             .order_by(AuditLog.occurred_at, AuditLog.id)
@@ -266,9 +266,9 @@ class RunObservabilityQueryService:
             events.append(
                 {
                     "event_type": "audit_log",
-                    "event_id": row.id,
-                    "occurred_at": row.occurred_at,
-                    "summary": self._audit_row(row),
+                    "event_id": audit_row.id,
+                    "occurred_at": audit_row.occurred_at,
+                    "summary": self._audit_row(audit_row),
                 }
             )
         events.sort(
@@ -491,7 +491,7 @@ class RunObservabilityQueryService:
         }
 
     def _normalize_cursor(self, cursor: str | None) -> int:
-        if cursor in {None, ""}:
+        if cursor is None or cursor == "":
             return 0
         try:
             offset = int(cursor)

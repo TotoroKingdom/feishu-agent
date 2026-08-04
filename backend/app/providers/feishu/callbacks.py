@@ -14,7 +14,7 @@ from app.approvals import (
     PublishApprovalStore,
 )
 from app.core.config import Settings
-from app.db.models import HumanApproval
+from app.db.models import CallbackEvent, HumanApproval
 from app.messaging.ledger import CallbackEventConflictError, CallbackInboxStore
 from app.providers.feishu.auth import (
     FeishuAuthError,
@@ -176,7 +176,7 @@ class FeishuCallbackService:
         payload: Mapping[str, object],
         actor_id: str,
         run_id: str | None,
-    ):
+    ) -> CallbackEvent:
         try:
             return self._inbox.record_callback_event(
                 provider="feishu",

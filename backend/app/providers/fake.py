@@ -1,4 +1,6 @@
+from collections.abc import Mapping
 from enum import StrEnum
+from typing import Literal
 
 from app.providers.feishu.bitable import FeishuBitableReadPage
 from app.providers.github.resources import GitHubRepositoryCoreData
@@ -14,7 +16,7 @@ class FakeFeishuProvider:
     def __init__(self, scenario: FakeScenario = FakeScenario.HAPPY) -> None:
         self.scenario = scenario
 
-    def read_pages(self, scope: dict[str, object] | None = None) -> list[FeishuBitableReadPage]:
+    def read_pages(self, scope: Mapping[str, object] | None = None) -> list[FeishuBitableReadPage]:
         records = self.read_records(scope)
         fetch_status = _fetch_status(records)
         page = FeishuBitableReadPage(
@@ -27,7 +29,7 @@ class FakeFeishuProvider:
         )
         return [page]
 
-    def read_records(self, scope: dict[str, object] | None = None) -> list[dict[str, object]]:
+    def read_records(self, scope: Mapping[str, object] | None = None) -> list[dict[str, object]]:
         if self.scenario == FakeScenario.UNKNOWN:
             return [{"external_id": "feishu-record-unknown", "status": "unknown"}]
         if self.scenario == FakeScenario.PARTIAL_FAILURE:
@@ -80,7 +82,7 @@ class FakeGitHubProvider:
         return list(self.read_repository_core_data({}).issues)
 
     def read_repository_core_data(
-        self, scope: dict[str, object] | None = None
+        self, scope: Mapping[str, object] | None = None
     ) -> GitHubRepositoryCoreData:
         repository_ref = _scope_repository_ref(scope)
         if self.scenario == FakeScenario.UNKNOWN:
@@ -436,7 +438,9 @@ class FakeEffectProvider:
         }
 
 
-def _fetch_status(records: list[dict[str, object]]) -> str:
+def _fetch_status(
+    records: list[dict[str, object]],
+) -> Literal["complete", "partial", "failed"]:
     statuses = {
         str(record.get("status") or "").casefold() for record in records if isinstance(record, dict)
     }
@@ -447,7 +451,7 @@ def _fetch_status(records: list[dict[str, object]]) -> str:
     return "complete"
 
 
-def _scope_repository_ref(scope: dict[str, object] | None) -> str:
+def _scope_repository_ref(scope: Mapping[str, object] | None) -> str:
     if scope is None:
         return "github-repository-example"
     selected = scope.get("selected_repository_ids")

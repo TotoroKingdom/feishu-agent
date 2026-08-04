@@ -1,0 +1,23 @@
+Behavioral contract found during mypy triage:
+PublishApprovalStore was used through load_approval_by_challenge(), but that method
+was absent from the class. An adjacent store exposed a similarly shaped query, but
+that did not satisfy the concrete callback dependency.
+
+RED
+>>> Set-Location backend
+>>> python -m pytest tests/unit/test_approval_stores.py -q
+FAILED tests/unit/test_approval_stores.py::test_publish_approval_store_loads_approval_by_challenge
+AttributeError: 'PublishApprovalStore' object has no attribute 'load_approval_by_challenge'
+__EXIT__=1
+
+GREEN
+>>> Set-Location backend
+>>> python -m pytest tests/unit/test_approval_stores.py -q
+.                                                                        [100%]
+__EXIT__=0
+
+Regression boundary
+>>> Set-Location backend
+>>> python -m pytest tests/integration/feishu_callbacks -q
+passed
+__EXIT__=0

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import Any
+from typing import Any, Protocol, TypedDict, cast
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
@@ -29,6 +29,19 @@ from app.publishing.service import PublishingService, PublishPlanOutcome, Publis
 from app.reporting.service import ReportingService, ReportStageOutcome
 
 
+class WorkflowNode(Protocol):
+    def __call__(self, state: WorkflowState) -> dict[str, object]: ...
+
+
+class _ApprovalState(TypedDict):
+    active_approval_ref: object
+    approval_type: object
+    challenge_id: object
+    approval_revision: int
+    requested_from: Sequence[str]
+    request_payload_hash: object
+
+
 def build_workflow_graph(
     checkpointer: BaseCheckpointSaver[Any] | None = None,
     approval_store: GenerationApprovalStore | None = None,
@@ -39,14 +52,18 @@ def build_workflow_graph(
     publishing_service: PublishingService | None = None,
     human_input_store: HumanInputApprovalStore | None = None,
 ) -> Any:
-    store = approval_store or _MissingGenerationApprovalStore()
-    diagnostician = diagnosis_service or _MissingDiagnosisService()
-    collector = collection_service or _MissingCollectionService()
-    metrics = metrics_service or _MissingMetricsService()
-    reporter = reporting_service or _MissingReportingService()
-    publisher = publishing_service or _MissingPublishingService()
-    human_store = human_input_store or _MissingHumanInputApprovalStore()
-    builder = StateGraph(WorkflowState)
+    store = approval_store or cast(GenerationApprovalStore, _MissingGenerationApprovalStore())
+    diagnostician = diagnosis_service or cast(DiagnosisService, _MissingDiagnosisService())
+    collector = collection_service or cast(CollectionService, _MissingCollectionService())
+    metrics = metrics_service or cast(MetricsService, _MissingMetricsService())
+    reporter = reporting_service or cast(ReportingService, _MissingReportingService())
+    publisher = publishing_service or cast(PublishingService, _MissingPublishingService())
+    human_store = human_input_store or cast(
+        HumanInputApprovalStore, _MissingHumanInputApprovalStore()
+    )
+    builder: StateGraph[WorkflowState, None, WorkflowState, WorkflowState] = StateGraph(
+        WorkflowState
+    )
     builder.add_node("load_project_config", _load_project_config)
     builder.add_node("build_generation_scope", _build_generation_scope)
     builder.add_node("request_generation_confirmation", _request_generation_confirmation(store))
@@ -353,7 +370,7 @@ def _build_generation_scope(state: WorkflowState) -> dict[str, object]:
         scope_revision += 1
 
     scope = build_generation_scope(state)
-    approval = {
+    approval: dict[str, object] = {
         "active_approval_ref": None,
         "approval_type": "generation",
         "approval_revision": scope_revision,
@@ -383,7 +400,7 @@ def _build_generation_scope(state: WorkflowState) -> dict[str, object]:
 
 def _request_generation_confirmation(
     store: GenerationApprovalStore,
-):
+) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         scope = _require_scope(state)
@@ -420,7 +437,7 @@ def _request_generation_confirmation(
     return _node
 
 
-def _wait_generation_confirmation(store: GenerationApprovalStore):
+def _wait_generation_confirmation(store: GenerationApprovalStore) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         scope = _require_scope(state)
@@ -531,7 +548,7 @@ def _wait_generation_confirmation(store: GenerationApprovalStore):
     return _node
 
 
-def _request_human_input(store: HumanInputApprovalStore):
+def _request_human_input(store: HumanInputApprovalStore) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         diagnosis = _require_diagnosis(state)
@@ -581,7 +598,7 @@ def _request_human_input(store: HumanInputApprovalStore):
     return _node
 
 
-def _wait_human_input(store: HumanInputApprovalStore):
+def _wait_human_input(store: HumanInputApprovalStore) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         diagnosis = _require_diagnosis(state)
@@ -691,7 +708,7 @@ def _wait_human_input(store: HumanInputApprovalStore):
     return _node
 
 
-def _diagnose_problem(diagnosis_service: DiagnosisService):
+def _diagnose_problem(diagnosis_service: DiagnosisService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         outcome = diagnosis_service.diagnose_problem(state)
@@ -725,7 +742,7 @@ def _diagnose_problem(diagnosis_service: DiagnosisService):
     return _node
 
 
-def _collect_feishu_data(collector: CollectionService):
+def _collect_feishu_data(collector: CollectionService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         outcome = collector.collect_feishu_data(state["run_id"], _require_scope(state))
@@ -737,7 +754,10 @@ def _collect_feishu_data(collector: CollectionService):
                 error_summary=outcome.error_summary,
                 source_batch_refs=_extend_unique(
                     state.get("source_batch_refs", []),
-                    outcome.source_batch_refs or [outcome.source_batch_ref],
+                    cast(
+                        Sequence[str | None],
+                        outcome.source_batch_refs or [cast(str, outcome.source_batch_ref)],
+                    ),
                 ),
             )
         return {
@@ -745,7 +765,10 @@ def _collect_feishu_data(collector: CollectionService):
             "current_node": "collect_github_data",
             "source_batch_refs": _extend_unique(
                 state.get("source_batch_refs", []),
-                outcome.source_batch_refs or [outcome.source_batch_ref],
+                cast(
+                    Sequence[str | None],
+                    outcome.source_batch_refs or [cast(str, outcome.source_batch_ref)],
+                ),
             ),
             "error_code": None,
             "error_summary": None,
@@ -754,7 +777,7 @@ def _collect_feishu_data(collector: CollectionService):
     return _node
 
 
-def _collect_github_data(collector: CollectionService):
+def _collect_github_data(collector: CollectionService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         outcome = collector.collect_github_data(state["run_id"], _require_scope(state))
@@ -766,7 +789,10 @@ def _collect_github_data(collector: CollectionService):
                 error_summary=outcome.error_summary,
                 source_batch_refs=_extend_unique(
                     state.get("source_batch_refs", []),
-                    outcome.source_batch_refs or [outcome.source_batch_ref],
+                    cast(
+                        Sequence[str | None],
+                        outcome.source_batch_refs or [cast(str, outcome.source_batch_ref)],
+                    ),
                 ),
             )
         return {
@@ -774,7 +800,10 @@ def _collect_github_data(collector: CollectionService):
             "current_node": "normalize_data",
             "source_batch_refs": _extend_unique(
                 state.get("source_batch_refs", []),
-                outcome.source_batch_refs or [outcome.source_batch_ref],
+                cast(
+                    Sequence[str | None],
+                    outcome.source_batch_refs or [cast(str, outcome.source_batch_ref)],
+                ),
             ),
             "error_code": None,
             "error_summary": None,
@@ -783,7 +812,7 @@ def _collect_github_data(collector: CollectionService):
     return _node
 
 
-def _normalize_data(collector: CollectionService):
+def _normalize_data(collector: CollectionService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         outcome = collector.normalize_data(state["run_id"], _require_scope(state))
@@ -806,7 +835,7 @@ def _normalize_data(collector: CollectionService):
     return _node
 
 
-def _validate_data(collector: CollectionService):
+def _validate_data(collector: CollectionService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         normalized_snapshot_ref = state.get("normalized_snapshot_ref")
@@ -837,7 +866,7 @@ def _validate_data(collector: CollectionService):
     return _node
 
 
-def _calculate_metrics(metrics_service: MetricsService):
+def _calculate_metrics(metrics_service: MetricsService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         normalized_snapshot_ref = state.get("normalized_snapshot_ref")
@@ -867,7 +896,7 @@ def _calculate_metrics(metrics_service: MetricsService):
     return _node
 
 
-def _build_evidence(reporter: ReportingService):
+def _build_evidence(reporter: ReportingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         metrics_ref = state.get("metrics_ref")
@@ -898,7 +927,7 @@ def _build_evidence(reporter: ReportingService):
     return _node
 
 
-def _generate_structured_report(reporter: ReportingService):
+def _generate_structured_report(reporter: ReportingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         evidence_set_ref = state.get("evidence_set_ref")
@@ -934,7 +963,7 @@ def _generate_structured_report(reporter: ReportingService):
     return _node
 
 
-def _verify_grounding(reporter: ReportingService):
+def _verify_grounding(reporter: ReportingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         report_version_ref = state.get("report_version_ref")
@@ -965,7 +994,7 @@ def _verify_grounding(reporter: ReportingService):
     return _node
 
 
-def _render_report(reporter: ReportingService):
+def _render_report(reporter: ReportingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         report_version_ref = state.get("report_version_ref")
@@ -997,7 +1026,7 @@ def _render_report(reporter: ReportingService):
     return _node
 
 
-def _build_publish_plan(publisher: PublishingService):
+def _build_publish_plan(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         report_version_ref = state.get("report_version_ref")
@@ -1051,7 +1080,7 @@ def _build_publish_plan(publisher: PublishingService):
     return _node
 
 
-def _request_publish_confirmation(publisher: PublishingService):
+def _request_publish_confirmation(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
@@ -1109,11 +1138,11 @@ def _request_publish_confirmation(publisher: PublishingService):
     return _node
 
 
-def _wait_publish_confirmation(publisher: PublishingService):
+def _wait_publish_confirmation(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approval = _require_approval(state)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1371,11 +1400,11 @@ def _wait_publish_confirmation(publisher: PublishingService):
     return _node
 
 
-def _create_feishu_document(publisher: PublishingService):
+def _create_feishu_document(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approved_plan_hash = _require_publish_plan_hash(publish)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1421,11 +1450,11 @@ def _create_feishu_document(publisher: PublishingService):
     return _node
 
 
-def _send_group_summary(publisher: PublishingService):
+def _send_group_summary(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approved_plan_hash = _require_publish_plan_hash(publish)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1471,11 +1500,11 @@ def _send_group_summary(publisher: PublishingService):
     return _node
 
 
-def _archive_report_record(publisher: PublishingService):
+def _archive_report_record(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approved_plan_hash = _require_publish_plan_hash(publish)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1521,11 +1550,11 @@ def _archive_report_record(publisher: PublishingService):
     return _node
 
 
-def _verify_side_effects(publisher: PublishingService):
+def _verify_side_effects(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approved_plan_hash = _require_publish_plan_hash(publish)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1570,11 +1599,11 @@ def _verify_side_effects(publisher: PublishingService):
     return _node
 
 
-def _compensate_partial_failure(publisher: PublishingService):
+def _compensate_partial_failure(publisher: PublishingService) -> WorkflowNode:
     def _node(state: WorkflowState) -> dict[str, object]:
         ensure_state_is_safe(state)
         publish_plan_ref = state.get("publish_plan_ref")
-        publish = state.get("publish")
+        publish = cast(dict[str, object], state.get("publish"))
         approved_plan_hash = _require_publish_plan_hash(publish)
         if not isinstance(publish_plan_ref, str) or not publish_plan_ref:
             return {
@@ -1921,7 +1950,7 @@ def _require_scope_hash(scope: Mapping[str, object]) -> str:
     return value
 
 
-def _require_approval(state: Mapping[str, object]) -> dict[str, object]:
+def _require_approval(state: Mapping[str, object]) -> _ApprovalState:
     approval = state.get("approval")
     if not isinstance(approval, Mapping):
         raise ValueError("approval is required")
@@ -1930,7 +1959,7 @@ def _require_approval(state: Mapping[str, object]) -> dict[str, object]:
     for key in required_keys:
         if key not in approval_dict:
             raise ValueError(f"approval.{key} is required")
-    return approval_dict
+    return cast(_ApprovalState, approval_dict)
 
 
 def _require_diagnosis(state: Mapping[str, object]) -> dict[str, object]:

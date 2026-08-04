@@ -1,0 +1,7 @@
+>>> Set-Location backend
+>>> python -m pytest tests/unit tests/contract -q
+........................................................................ [ 94%]
+....                                                                     [100%]
+__EXIT__=0
+
+Collected progress markers: 76 passed, 0 failed, 0 skipped.

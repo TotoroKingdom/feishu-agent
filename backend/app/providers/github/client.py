@@ -210,7 +210,7 @@ class GitHubClient:
     def _collect_pages(
         self, path: str, *, params: Mapping[str, object] | None = None
     ) -> list[dict[str, object]]:
-        url = self._build_url(path, params)
+        url: str | None = self._build_url(path, params)
         items: list[dict[str, object]] = []
         while url is not None:
             response = self._send("GET", url)

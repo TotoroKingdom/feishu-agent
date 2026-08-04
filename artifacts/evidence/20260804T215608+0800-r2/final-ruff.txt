@@ -1,0 +1,8 @@
+>>> Set-Location backend
+>>> python -m ruff check app tests
+All checks passed!
+__EXIT__=0
+
+>>> python -m ruff format --check app tests
+157 files already formatted
+__EXIT__=0

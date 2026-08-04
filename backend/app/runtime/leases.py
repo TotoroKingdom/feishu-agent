@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import TypeVar
 
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from app.db.models import (
     AsyncJob,
@@ -25,6 +27,7 @@ from app.db.models import (
 )
 
 SessionFactory = Callable[[], Session]
+LifecycleRow = TypeVar("LifecycleRow", NodeExecution, ToolExecution, LlmExecution, ReportVersion)
 
 DEFAULT_RUN_LEASE_SECONDS = 60
 DEFAULT_OPERATION_LEASE_SECONDS = 300
@@ -513,15 +516,17 @@ class DataLifecycleService:
         current_time: datetime,
         dry_run: bool,
     ) -> int:
-        rows = session.scalars(
-            select(AsyncJob)
-            .where(
-                AsyncJob.status.in_(("succeeded", "cancelled")),
-                AsyncJob.completed_at.is_not(None),
-                AsyncJob.completed_at <= current_time - timedelta(days=30),
-            )
-            .order_by(AsyncJob.completed_at, AsyncJob.id)
-        ).all()
+        rows = list(
+            session.scalars(
+                select(AsyncJob)
+                .where(
+                    AsyncJob.status.in_(("succeeded", "cancelled")),
+                    AsyncJob.completed_at.is_not(None),
+                    AsyncJob.completed_at <= current_time - timedelta(days=30),
+                )
+                .order_by(AsyncJob.completed_at, AsyncJob.id)
+            ).all()
+        )
         failed_rows = session.scalars(
             select(AsyncJob)
             .where(
@@ -627,11 +632,11 @@ class DataLifecycleService:
     def _delete_rows(
         self,
         session: Session,
-        model: type,
-        *conditions,
+        model: type[LifecycleRow],
+        *conditions: ColumnElement[bool],
         dry_run: bool,
     ) -> int:
-        rows = session.scalars(select(model).where(*conditions)).all()
+        rows: Sequence[LifecycleRow] = session.scalars(select(model).where(*conditions)).all()
         if not dry_run and rows:
             session.execute(delete(model).where(model.id.in_([row.id for row in rows])))
         return len(rows)

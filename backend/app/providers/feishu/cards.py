@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Literal, cast
+from typing import Literal
 
 from app.approvals import canonical_json_hash
 from app.providers.feishu.models import FeishuCardMessageDraft, FeishuCardRecipient
@@ -21,7 +21,7 @@ class FeishuCardFactory:
         card_message_id: str | None = None,
         metadata: Mapping[str, object] | None = None,
     ) -> FeishuCardMessageDraft:
-        content = {
+        content: dict[str, object] = {
             "header": {
                 "title": title,
                 "purpose": purpose,
@@ -50,7 +50,7 @@ class FeishuCardFactory:
             revision=revision,
             run_id=run_id,
             recipient=recipient,
-            operation=cast(Literal["create", "update"], operation),
+            operation=operation,
             content=content,
             content_hash=content_hash,
             idempotency_key=idempotency_key,
